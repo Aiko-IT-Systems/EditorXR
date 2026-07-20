@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Unity.EditorXR.Data;
+using Unity.EditorXR.Interfaces;
 using Unity.XRTools.Utils;
 using UnityEngine;
 using UnityEngine.Video;
@@ -66,7 +67,7 @@ namespace Unity.EditorXR.Utilities
         internal static void AssignAnimationClip(Animation animation, AnimationClip clipAsset)
         {
 #if UNITY_EDITOR
-            UnityEditor.Undo.RecordObject(animation, k_AssignAnimationClipUndo);
+            RecordObject(animation, k_AssignAnimationClipUndo);
 #endif
 
             if (animation.GetClipCount() > 0 && s_AssignMultipleAnimationClips)
@@ -96,7 +97,7 @@ namespace Unity.EditorXR.Utilities
             if (source != null)
             {
 #if UNITY_EDITOR
-                UnityEditor.Undo.RecordObject(source, k_AssignAudioClipUndo);
+                RecordObject(source, k_AssignAudioClipUndo);
 #endif
                 source.clip = (AudioClip)data.asset;
             }
@@ -117,7 +118,7 @@ namespace Unity.EditorXR.Utilities
             if (player != null)
             {
 #if UNITY_EDITOR
-                UnityEditor.Undo.RecordObject(player, k_AssignVideoClipUndo);
+                RecordObject(player, k_AssignVideoClipUndo);
 #endif
                 player.clip = (VideoClip)data.asset;
             }
@@ -152,7 +153,7 @@ namespace Unity.EditorXR.Utilities
             if (renderer != null)
             {
 #if UNITY_EDITOR
-                UnityEditor.Undo.RecordObject(go, k_AssignMaterialUndo);
+                RecordObject(renderer, k_AssignMaterialUndo);
 #endif
                 renderer.sharedMaterial = (Material)data.asset;
             }
@@ -171,7 +172,7 @@ namespace Unity.EditorXR.Utilities
             if (renderer != null)
             {
 #if UNITY_EDITOR
-                UnityEditor.Undo.RecordObject(go, k_AssignMaterialUndo);
+                RecordObject(renderer, k_AssignMaterialUndo);
 #endif
 
                 // copy the material before applying shader to the instance
@@ -214,7 +215,7 @@ namespace Unity.EditorXR.Utilities
         internal static void AssignPhysicMaterial(Collider collider, PhysicMaterial material)
         {
 #if UNITY_EDITOR
-            UnityEditor.Undo.RecordObject(collider, k_AssignPhysicMaterialUndo);
+            RecordObject(collider, k_AssignPhysicMaterialUndo);
 #endif
             collider.material = material;
         }
@@ -228,7 +229,7 @@ namespace Unity.EditorXR.Utilities
                 var font = (Font)data.asset;
 
 #if UNITY_EDITOR
-                UnityEditor.Undo.RecordObject(go, k_AssignFontUndo);
+                RecordObject(text, k_AssignFontUndo);
 #endif
 
                 text.font = font;
@@ -243,5 +244,15 @@ namespace Unity.EditorXR.Utilities
         {
             AssignFontOnChildren(go, data);
         }
+
+#if UNITY_EDITOR
+        static void RecordObject(UnityEngine.Object target, string label)
+        {
+            if (AuthoringSessionMethods.isSessionActive())
+                AuthoringSessionMethods.recordObject(target);
+            else
+                UnityEditor.Undo.RecordObject(target, label);
+        }
+#endif
     }
 }

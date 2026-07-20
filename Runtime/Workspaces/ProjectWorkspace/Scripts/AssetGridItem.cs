@@ -571,19 +571,23 @@ namespace Unity.EditorXR.Workspaces
             var rayOrigin = eventData.rayOrigin;
             this.RemoveRayVisibilitySettings(rayOrigin, this);
 
-            if (!this.IsOverShoulder(eventData.rayOrigin))
+            using (AuthoringSessionMethods.beginScope("Place Project Asset"))
             {
-                var previewObjectTransform = gridItem.m_PreviewObjectTransform;
-                if (previewObjectTransform)
+                if (!this.IsOverShoulder(eventData.rayOrigin))
                 {
+                    var previewObjectTransform = gridItem.m_PreviewObjectTransform;
+                    if (previewObjectTransform)
+                    {
 #if UNITY_EDITOR
-                    UnityEditor.Undo.RegisterCreatedObjectUndo(previewObjectTransform.gameObject, "Place Scene Object");
+                        UnityEditor.Undo.RegisterCreatedObjectUndo(previewObjectTransform.gameObject, "Place Scene Object");
 #endif
-                    this.PlaceSceneObject(previewObjectTransform, m_PreviewPrefabScale);
-                }
-                else
-                {
-                    HandleAssetDropByType(rayOrigin, gridItem);
+                        AuthoringSessionMethods.registerCreatedHierarchy(previewObjectTransform.gameObject);
+                        this.PlaceSceneObject(previewObjectTransform, m_PreviewPrefabScale);
+                    }
+                    else
+                    {
+                        HandleAssetDropByType(rayOrigin, gridItem);
+                    }
                 }
             }
 
@@ -663,6 +667,7 @@ namespace Unity.EditorXR.Workspaces
 #if UNITY_EDITOR
             UnityEditor.Undo.RegisterCreatedObjectUndo(go, "Project Workspace");
 #endif
+            AuthoringSessionMethods.registerCreatedHierarchy(go);
         }
 
         GameObject TryGetSelection(Transform rayOrigin, bool includeRays)

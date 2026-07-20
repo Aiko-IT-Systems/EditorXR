@@ -19,10 +19,11 @@ namespace Unity.EditorXR
 
         public override void ExecuteAction()
         {
-            var gameObjects = Selection.gameObjects;
-            foreach (var go in gameObjects)
+            using (AuthoringSessionMethods.beginScope("Delete Selection"))
             {
-                this.DeleteSceneObject(go);
+                var gameObjects = Selection.gameObjects;
+                foreach (var go in gameObjects)
+                    this.DeleteSceneObject(go);
             }
 
 #if UNITY_EDITOR

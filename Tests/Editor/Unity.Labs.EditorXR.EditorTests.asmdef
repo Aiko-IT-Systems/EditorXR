@@ -2,6 +2,7 @@
     "name": "Unity.EditorXR.EditorTests",
     "references": [
         "Unity.EditorXR",
+        "Unity.EditorXR.Editor",
         "Unity.XRTools.Utils",
         "Unity.XRTools.Utils.Editor",
         "Unity.EditorXR.Interfaces",

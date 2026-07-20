@@ -243,6 +243,10 @@ namespace Unity.EditorXR.Modules
         // TODO: Order doesn't matter any more ostensibly, so let's simply add when AMIs are created
         public void UpdatePlayerHandleMaps()
         {
+            // Behavior callbacks can run for a few frames before delayed module initialization.
+            if (m_PlayerHandle == null)
+                return;
+
             var maps = m_PlayerHandle.maps;
             maps.Clear();
 
@@ -319,6 +323,9 @@ namespace Unity.EditorXR.Modules
 
         void ResetControl(InputControl control)
         {
+            if (m_PlayerHandle == null)
+                return;
+
             var ami = control.provider as ActionMapInput;
             var playerHandleMaps = m_PlayerHandle.maps;
             for (int i = 0; i < playerHandleMaps.Count; i++)

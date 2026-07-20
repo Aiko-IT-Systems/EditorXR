@@ -9,7 +9,6 @@ using Unity.XRTools.ModuleLoader;
 using Unity.XRTools.SpatialHash;
 using Unity.XRTools.Utils;
 using UnityEngine;
-using UnityEngine.XR;
 
 namespace Unity.EditorXR.Core
 {
@@ -191,7 +190,7 @@ namespace Unity.EditorXR.Core
             var viewerCamera = CameraUtils.GetMainCamera();
             m_OriginalNearClipPlane = viewerCamera.nearClipPlane;
             m_OriginalFarClipPlane = viewerCamera.farClipPlane;
-            if (XRSettings.loadedDeviceName == "OpenVR")
+            if (UsesDeviceTypeMethods.GetDeviceType() == DeviceType.Vive)
             {
                 // Steam's reference position should be at the feet and not at the head as we do with Oculus
                 cameraRig.localPosition = Vector3.zero;

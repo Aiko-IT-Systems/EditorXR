@@ -1,3 +1,4 @@
+using System;
 using Unity.EditorXR.Interfaces;
 using Unity.EditorXR.Proxies;
 using Unity.EditorXR.Utilities;
@@ -32,6 +33,7 @@ namespace Unity.EditorXR.Tools
         bool m_Freeform;
 
         GameObject m_CurrentGameObject;
+        IDisposable m_AuthoringScope;
 
         Vector3 m_StartPoint = Vector3.zero;
         Vector3 m_EndPoint = Vector3.zero;
@@ -135,10 +137,12 @@ namespace Unity.EditorXR.Tools
         {
             if (standardInput.action.wasJustPressed)
             {
+                m_AuthoringScope = AuthoringSessionMethods.beginScope("Create Primitive");
                 m_CurrentGameObject = GameObject.CreatePrimitive(m_SelectedPrimitiveType);
 #if UNITY_EDITOR
                 UnityEditor.Undo.RegisterCreatedObjectUndo(m_CurrentGameObject, "Create Primitive");
 #endif
+                AuthoringSessionMethods.registerCreatedHierarchy(m_CurrentGameObject);
                 // Set starting minimum scale (don't allow zero scale object to be created)
                 const float kMinScale = 0.0025f;
                 var viewerScale = this.GetViewerScale();
@@ -188,9 +192,19 @@ namespace Unity.EditorXR.Tools
 #if UNITY_EDITOR
                 UnityEditor.Undo.IncrementCurrentGroup();
 #endif
+                EndAuthoringScope();
 
                 consumeControl(standardInput.action);
             }
+        }
+
+        void EndAuthoringScope()
+        {
+            if (m_AuthoringScope == null)
+                return;
+
+            m_AuthoringScope.Dispose();
+            m_AuthoringScope = null;
         }
 
         bool IsActive()
@@ -205,6 +219,7 @@ namespace Unity.EditorXR.Tools
 
         void OnDestroy()
         {
+            EndAuthoringScope();
             UnityObjectUtils.Destroy(m_ToolMenu);
 
             if (rayOrigin == null)

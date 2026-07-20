@@ -31,7 +31,10 @@ namespace Unity.EditorXR.Modules
         public void DeleteSceneObject(GameObject sceneObject)
         {
             this.RemoveFromSpatialHash(sceneObject);
-            UnityObjectUtils.Destroy(sceneObject, withUndo: true);
+            if (AuthoringSessionMethods.isSessionActive())
+                AuthoringSessionMethods.destroyHierarchy(sceneObject);
+            else
+                UnityObjectUtils.Destroy(sceneObject, withUndo: true);
         }
 
         IEnumerator PlaceSceneObjectCoroutine(Transform obj, Vector3 targetScale)

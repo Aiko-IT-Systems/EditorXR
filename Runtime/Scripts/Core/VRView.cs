@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Reflection;
+using Unity.EditorXR.Core.XR;
 using Unity.EditorXR.Utilities;
 using Unity.XRTools.ModuleLoader;
 using Unity.XRTools.Utils;
@@ -9,8 +10,6 @@ using UnityEngine;
 using UnityEngine.Assertions;
 using UnityEngine.SpatialTracking;
 using UnityEngine.XR;
-using InputTracking = UnityEngine.XR.InputTracking;
-using TrackingSpaceType = UnityEngine.XR.TrackingSpaceType;
 
 namespace Unity.EditorXR.Core
 {
@@ -120,9 +119,7 @@ namespace Unity.EditorXR.Core
         {
             get
             {
-#pragma warning disable 618
-                return XRDevice.GetTrackingSpaceType() == TrackingSpaceType.Stationary ? Vector3.up * HeadHeight : Vector3.zero;
-#pragma warning restore 618
+                return EditorXRXRDevices.backend.isFloorTrackingOrigin ? Vector3.zero : Vector3.up * HeadHeight;
             }
         }
 
@@ -226,6 +223,9 @@ namespace Unity.EditorXR.Core
                 if (!tpd)
                     tpd = camera.gameObject.AddComponent<TrackedPoseDriver>();
 
+                tpd.SetPoseSource(TrackedPoseDriver.DeviceType.GenericXRDevice, TrackedPoseDriver.TrackedPose.Center);
+                tpd.trackingType = TrackedPoseDriver.TrackingType.RotationAndPosition;
+                tpd.updateType = TrackedPoseDriver.UpdateType.UpdateAndBeforeRender;
                 tpd.UseRelativeTransform = false;
             }
             else
@@ -250,11 +250,13 @@ namespace Unity.EditorXR.Core
             // Disable other views to increase rendering performance for EditorXR
             SetOtherViewsEnabled(false);
 
-            // VRSettings.enabled latches the reference pose for the current camera
+#if !UNITY_2020_1_OR_NEWER
+            // Legacy edit mode requires XRSettings to latch the reference pose for the current camera.
             var currentCamera = Camera.current;
             Camera.SetupCurrent(m_Camera);
             XRSettings.enabled = true;
             Camera.SetupCurrent(currentCamera);
+#endif
 
             if (viewEnabled != null)
                 viewEnabled();
@@ -298,7 +300,9 @@ namespace Unity.EditorXR.Core
             if (m_CameraRig)
                 DestroyImmediate(m_CameraRig.gameObject, true);
 
+#if !UNITY_2020_1_OR_NEWER
             XRSettings.enabled = false;
+#endif
 
             Assert.IsNotNull(s_ActiveView, "EditorXR should have an active view");
             s_ActiveView = null;
@@ -312,11 +316,14 @@ namespace Unity.EditorXR.Core
             if (!m_Camera)
                 return;
 
-#pragma warning disable 618
             var cameraTransform = m_Camera.transform;
-            cameraTransform.localPosition = InputTracking.GetLocalPosition(XRNode.Head);
-            cameraTransform.localRotation = InputTracking.GetLocalRotation(XRNode.Head);
-#pragma warning restore 618
+            Vector3 position;
+            Quaternion rotation;
+            if (EditorXRXRDevices.backend.TryGetHeadPose(out position, out rotation))
+            {
+                cameraTransform.localPosition = position;
+                cameraTransform.localRotation = rotation;
+            }
         }
 
         public void CreateCameraTargetTexture(ref RenderTexture renderTexture, Rect cameraRect, bool hdr)
@@ -363,9 +370,10 @@ namespace Unity.EditorXR.Core
             // Always render camera into a RT
             CreateCameraTargetTexture(ref m_TargetTexture, cameraRect, false);
             m_Camera.targetTexture = m_TargetTexture;
-            //XRSettings.showDeviceView = m_ShowDeviceView;
-            //TODO: Fix GUI scaling bug
+#if !UNITY_2020_1_OR_NEWER
+            // Always set to true to work around a legacy GUI scaling bug.
             XRSettings.showDeviceView = true; // Always set to true to work around GUI scaling bug
+#endif
         }
 
         void OnGUI()
@@ -511,7 +519,9 @@ namespace Unity.EditorXR.Core
         internal static bool GetIsUserPresent()
         {
 #if UNITY_2020_2_OR_NEWER
-            return false;
+            var backend = EditorXRXRDevices.backend;
+            backend.RefreshDevices();
+            return backend.userPresent;
 #else
 #pragma warning disable 618
             return XRDevice.userPresence == UserPresenceState.Present;

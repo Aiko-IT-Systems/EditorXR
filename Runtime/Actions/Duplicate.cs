@@ -19,23 +19,27 @@ namespace Unity.EditorXR
 
         public override void ExecuteAction()
         {
-#if UNITY_EDITOR
-            Unsupported.DuplicateGameObjectsUsingPasteboard();
-#endif
-            var selection = Selection.transforms;
-            var bounds = BoundsUtils.GetBounds(selection);
-            foreach (var s in selection)
+            using (AuthoringSessionMethods.beginScope("Duplicate Selection"))
             {
-                var clone = s.gameObject;
-                clone.hideFlags = HideFlags.None;
-                var cloneTransform = clone.transform;
-                var cameraTransform = CameraUtils.GetMainCamera().transform;
-                var position = cloneTransform.position;
-                var viewDirection = position - cameraTransform.position;
-                position = cameraTransform.TransformPoint(Vector3.forward * viewDirection.magnitude / this.GetViewerScale())
-                    + position - bounds.center;
-                cloneTransform.position = position;
-                this.AddToSpatialHash(clone);
+#if UNITY_EDITOR
+                Unsupported.DuplicateGameObjectsUsingPasteboard();
+#endif
+                var selection = Selection.transforms;
+                var bounds = BoundsUtils.GetBounds(selection);
+                foreach (var s in selection)
+                {
+                    var clone = s.gameObject;
+                    AuthoringSessionMethods.registerCreatedHierarchy(clone);
+                    clone.hideFlags = HideFlags.None;
+                    var cloneTransform = clone.transform;
+                    var cameraTransform = CameraUtils.GetMainCamera().transform;
+                    var position = cloneTransform.position;
+                    var viewDirection = position - cameraTransform.position;
+                    position = cameraTransform.TransformPoint(Vector3.forward * viewDirection.magnitude / this.GetViewerScale())
+                        + position - bounds.center;
+                    cloneTransform.position = position;
+                    this.AddToSpatialHash(clone);
+                }
             }
         }
     }

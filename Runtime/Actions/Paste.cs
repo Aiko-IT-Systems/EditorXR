@@ -34,21 +34,25 @@ namespace Unity.EditorXR
 
         public override void ExecuteAction()
         {
-#if UNITY_EDITOR
-            Unsupported.PasteGameObjectsFromPasteboard();
-#endif
-            var transforms = Selection.transforms;
-            var bounds = BoundsUtils.GetBounds(transforms);
-            foreach (var transform in transforms)
+            using (AuthoringSessionMethods.beginScope("Paste Selection"))
             {
-                var pasted = transform.gameObject;
-                var pastedTransform = pasted.transform;
-                pasted.hideFlags = HideFlags.None;
-                var cameraTransform = CameraUtils.GetMainCamera().transform;
-                pastedTransform.position = cameraTransform.TransformPoint(Vector3.forward * s_BufferDistance)
-                    + pastedTransform.position - bounds.center;
-                pasted.SetActive(true);
-                this.AddToSpatialHash(pasted);
+#if UNITY_EDITOR
+                Unsupported.PasteGameObjectsFromPasteboard();
+#endif
+                var transforms = Selection.transforms;
+                var bounds = BoundsUtils.GetBounds(transforms);
+                foreach (var transform in transforms)
+                {
+                    var pasted = transform.gameObject;
+                    AuthoringSessionMethods.registerCreatedHierarchy(pasted);
+                    var pastedTransform = pasted.transform;
+                    pasted.hideFlags = HideFlags.None;
+                    var cameraTransform = CameraUtils.GetMainCamera().transform;
+                    pastedTransform.position = cameraTransform.TransformPoint(Vector3.forward * s_BufferDistance)
+                        + pastedTransform.position - bounds.center;
+                    pasted.SetActive(true);
+                    this.AddToSpatialHash(pasted);
+                }
             }
         }
     }

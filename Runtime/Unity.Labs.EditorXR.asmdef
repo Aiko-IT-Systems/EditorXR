@@ -12,6 +12,8 @@
         "Unity.XRTools.ModuleLoader",
         "Unity.EditorXR.Interfaces",
         "UnityEngine.SpatialTracking",
+        "Unity.XR.Management",
+        "Unity.XR.Oculus",
         "Unity.XRTools.SpatialHash.Public",
         "Unity.XRTools.SpatialHash"
     ],

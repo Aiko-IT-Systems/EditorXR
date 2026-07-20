@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine.XR;
 
 namespace Unity.EditorXR
@@ -18,7 +19,7 @@ namespace Unity.EditorXR
 
     static class UsesDeviceTypeMethods
     {
-        static string s_XRDeviceModel;
+        static readonly List<InputDevice> k_Devices = new List<InputDevice>();
 
         /// <summary>
         /// Returns the type of device currently in use
@@ -26,17 +27,24 @@ namespace Unity.EditorXR
         /// <returns>The device type</returns>
         public static DeviceType GetDeviceType(this IUsesDeviceType @this)
         {
-#if UNITY_2020_2_OR_NEWER
-            return default;
-#else
-#pragma warning disable 618
-            if (string.IsNullOrEmpty(s_XRDeviceModel))
-                s_XRDeviceModel = XRDevice.model;
-#pragma warning restore 618
+            return GetDeviceType();
+        }
 
-            return s_XRDeviceModel.IndexOf("oculus", StringComparison.OrdinalIgnoreCase) >= 0
-                ? DeviceType.Oculus : DeviceType.Vive;
-#endif
+        internal static DeviceType GetDeviceType()
+        {
+            k_Devices.Clear();
+            InputDevices.GetDevices(k_Devices);
+            foreach (var device in k_Devices)
+            {
+                var name = device.name;
+                if (!string.IsNullOrEmpty(name)
+                    && (name.IndexOf("oculus", StringComparison.OrdinalIgnoreCase) >= 0
+                        || name.IndexOf("meta", StringComparison.OrdinalIgnoreCase) >= 0
+                        || name.IndexOf("quest", StringComparison.OrdinalIgnoreCase) >= 0))
+                    return DeviceType.Oculus;
+            }
+
+            return DeviceType.Vive;
         }
     }
 }

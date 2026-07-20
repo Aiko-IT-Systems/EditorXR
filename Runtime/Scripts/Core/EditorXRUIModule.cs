@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Unity.EditorXR.Interfaces;
 using Unity.EditorXR.Modules;
 using Unity.EditorXR.UI;
@@ -125,6 +126,10 @@ namespace Unity.EditorXR.Core
                     m_NewInputModule = eventSystem.gameObject.AddComponent<MultipleRayInputModule>();
                     m_InputModule = m_NewInputModule;
                 }
+
+                // ClientSim and other runtime systems must remain the active module. EditorXR ray sources are
+                // driven by the action-map pipeline and can operate without taking EventSystem ownership.
+                UpdateCooperativeMode();
             }
             else
             {
@@ -195,6 +200,15 @@ namespace Unity.EditorXR.Core
             return go;
         }
 
+        void UpdateCooperativeMode()
+        {
+            if (!m_InputModule)
+                return;
+
+            var inputModules = m_InputModule.GetComponents<BaseInputModule>();
+            m_InputModule.cooperativeMode = inputModules.Any(module => module && module != m_InputModule && module.enabled);
+        }
+
         public void SetManipulatorsVisible(IUsesSetManipulatorsVisible setter, bool visible)
         {
             if (visible)
@@ -232,7 +246,10 @@ namespace Unity.EditorXR.Core
 
         public void OnBehaviorEnable() { }
 
-        public void OnBehaviorStart() { }
+        public void OnBehaviorStart()
+        {
+            UpdateCooperativeMode();
+        }
 
         public void OnBehaviorUpdate()
         {

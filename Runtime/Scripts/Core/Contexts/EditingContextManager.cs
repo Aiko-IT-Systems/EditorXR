@@ -4,10 +4,12 @@
 #endif
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using Unity.EditorXR.Core.XR;
 using Unity.EditorXR.Utilities;
 using Unity.XRTools.ModuleLoader;
 using Unity.XRTools.Utils;
@@ -42,6 +44,7 @@ namespace Unity.EditorXR.Core
 #endif
 
         IEditingContext m_CurrentContext;
+        EditorXRXRLifecycle m_XRLifecycle;
 
         static InputManager s_InputManager;
         static List<IEditingContext> s_AvailableContexts;
@@ -438,14 +441,8 @@ namespace Unity.EditorXR.Core
 
             moduleLoaderCore.OnBehaviorAwake();
 
-            if (Application.isPlaying)
-            {
-                OnVRViewEnabled();
-                instance = this;
-                SetEditingContext((IEditingContext)m_DefaultContext);
-            }
 #if UNITY_EDITOR
-            else
+            if (!Application.isPlaying)
             {
                 foreach (var module in moduleLoaderCore.modules)
                 {
@@ -455,6 +452,21 @@ namespace Unity.EditorXR.Core
                 }
             }
 #endif
+        }
+
+        IEnumerator Start()
+        {
+            if (!Application.isPlaying)
+                yield break;
+
+            m_XRLifecycle = new EditorXRXRLifecycle();
+            yield return m_XRLifecycle.Initialize();
+            if (!m_XRLifecycle.isReady)
+                yield break;
+
+            OnVRViewEnabled();
+            instance = this;
+            SetEditingContext((IEditingContext)m_DefaultContext);
         }
 
 #if UNITY_EDITOR
@@ -648,7 +660,11 @@ namespace Unity.EditorXR.Core
             moduleLoaderCore.OnBehaviorDestroy();
 
             if (Application.isPlaying)
+            {
                 moduleLoaderCore.UnloadModules();
+                if (m_XRLifecycle != null)
+                    m_XRLifecycle.Shutdown();
+            }
         }
     }
 }

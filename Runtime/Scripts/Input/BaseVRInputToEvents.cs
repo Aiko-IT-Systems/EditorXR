@@ -1,4 +1,5 @@
 using System;
+using Unity.EditorXR.Core.XR;
 using UnityEngine;
 using UnityEngine.InputNew;
 using UnityEngine.XR;
@@ -17,8 +18,10 @@ namespace Unity.EditorXR.Input
         const float k_DeadZone = 0.05f;
 
         float[,] m_LastAxisValues = new float[k_ControllerCount, k_AxisCount];
+        bool[,] m_LastButtonValues = new bool[k_ControllerCount, k_AxisCount];
         Vector3[] m_LastPositionValues = new Vector3[k_ControllerCount];
         Quaternion[] m_LastRotationValues = new Quaternion[k_ControllerCount];
+        bool[] m_HasLastPose = new bool[k_ControllerCount];
         static readonly VRInputDevice.VRControl[] k_Buttons =
         {
             VRInputDevice.VRControl.Action1,
@@ -28,19 +31,21 @@ namespace Unity.EditorXR.Input
 
 		public void Update()
         {
-            var deviceActive = false;
-            foreach (var device in UnityEngine.Input.GetJoystickNames())
+            var backend = EditorXRXRDevices.backend;
+            backend.RefreshDevices();
+            var deviceActive = backend.IsControllerConnected(XRControllerHand.Left, DeviceName)
+                && backend.IsControllerConnected(XRControllerHand.Right, DeviceName);
+
+            if (!deviceActive)
             {
-                if (device.IndexOf(DeviceName, StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    deviceActive = true;
-                    break;
-                }
+                if (active)
+                    ReleaseControls();
+
+                active = false;
+                return;
             }
 
-            active = deviceActive;
-            if (!active)
-                return;
+            active = true;
 
             for (VRInputDevice.Handedness hand = VRInputDevice.Handedness.Left;
                 (int)hand <= (int)VRInputDevice.Handedness.Right;
@@ -57,31 +62,20 @@ namespace Unity.EditorXR.Input
 
         bool GetAxis(VRInputDevice.Handedness hand, VRInputDevice.VRControl axis, out float value)
         {
+            var backendHand = ToBackendHand(hand);
             switch (axis)
             {
                 case VRInputDevice.VRControl.Trigger1:
-                    if (hand == VRInputDevice.Handedness.Left)
-                        value = UnityEngine.Input.GetAxis("XRI_Left_Trigger");
-                    else
-                        value = UnityEngine.Input.GetAxis("XRI_Right_Trigger");
-                    return true;
+                    return EditorXRXRDevices.backend.TryGetAxis(backendHand, CommonUsages.trigger, out value);
                 case VRInputDevice.VRControl.Trigger2:
-                    if (hand == VRInputDevice.Handedness.Left)
-                        value = UnityEngine.Input.GetAxis("XRI_Left_Grip");
-                    else
-                        value = UnityEngine.Input.GetAxis("XRI_Right_Grip");
-                    return true;
+                    return EditorXRXRDevices.backend.TryGetAxis(backendHand, CommonUsages.grip, out value);
                 case VRInputDevice.VRControl.LeftStickX:
-                    if (hand == VRInputDevice.Handedness.Left)
-                        value = UnityEngine.Input.GetAxis("XRI_Left_Primary2DAxis_Horizontal");
-                    else
-                        value = UnityEngine.Input.GetAxis("XRI_Right_Primary2DAxis_Horizontal");
-                    return true;
                 case VRInputDevice.VRControl.LeftStickY:
-                    if (hand == VRInputDevice.Handedness.Left)
-                        value = -1f * UnityEngine.Input.GetAxis("XRI_Left_Primary2DAxis_Vertical");
-                    else
-                        value = -1f * UnityEngine.Input.GetAxis("XRI_Right_Primary2DAxis_Vertical");
+                    Vector2 axisValue;
+                    if (!EditorXRXRDevices.backend.TryGetAxis(backendHand, CommonUsages.primary2DAxis, out axisValue))
+                        break;
+
+                    value = axis == VRInputDevice.VRControl.LeftStickX ? axisValue.x : -axisValue.y;
                     return true;
             }
 
@@ -96,11 +90,11 @@ namespace Unity.EditorXR.Input
                 float value;
                 if (GetAxis(hand, (VRInputDevice.VRControl)axis, out value))
                 {
+                    if (Mathf.Abs(value) < k_DeadZone)
+                        value = 0f;
+
                     if (Mathf.Approximately(m_LastAxisValues[(int)hand, axis], value))
                         continue;
-
-                    if (Mathf.Abs(value) < k_DeadZone)
-                        value = 0;
 
                     var inputEvent = InputSystem.CreateEvent<GenericControlEvent>();
                     inputEvent.deviceType = typeof(VRInputDevice);
@@ -147,18 +141,23 @@ namespace Unity.EditorXR.Input
             foreach (VRInputDevice.VRControl button in k_Buttons)
             {
                 var axis = GetButtonAxis(hand, button);
+                InputFeatureUsage<bool> usage;
+                if (!TryGetButtonUsage(axis, out usage))
+                    continue;
 
-                bool isDown = UnityEngine.Input.GetButtonDown(axis);
-                bool isUp = UnityEngine.Input.GetButtonUp(axis);
+                bool pressed;
+                if (!EditorXRXRDevices.backend.TryGetButton(ToBackendHand(hand), usage, out pressed))
+                    continue;
 
-                if (isDown || isUp)
+                if (pressed != m_LastButtonValues[(int)hand, (int)button])
                 {
                     var inputEvent = InputSystem.CreateEvent<GenericControlEvent>();
                     inputEvent.deviceType = typeof(VRInputDevice);
                     inputEvent.deviceIndex = deviceIndex;
                     inputEvent.controlIndex = (int)button;
-                    inputEvent.value = isDown ? 1.0f : 0.0f;
+                    inputEvent.value = pressed ? 1.0f : 0.0f;
 
+                    m_LastButtonValues[(int)hand, (int)button] = pressed;
                     InputSystem.QueueEvent(inputEvent);
                 }
             }
@@ -166,13 +165,13 @@ namespace Unity.EditorXR.Input
 
         void SendTrackingEvents(VRInputDevice.Handedness hand, int deviceIndex)
         {
-#pragma warning disable 618
-            var node = hand == VRInputDevice.Handedness.Left ? XRNode.LeftHand : XRNode.RightHand;
-            var localPosition = InputTracking.GetLocalPosition(node);
-            var localRotation = InputTracking.GetLocalRotation(node);
-#pragma warning restore 618
+            Vector3 localPosition;
+            Quaternion localRotation;
+            if (!EditorXRXRDevices.backend.TryGetControllerPose(ToBackendHand(hand), out localPosition, out localRotation))
+                return;
 
-            if (localPosition == m_LastPositionValues[(int)hand] && localRotation == m_LastRotationValues[(int)hand])
+            if (m_HasLastPose[(int)hand] && localPosition == m_LastPositionValues[(int)hand]
+                && localRotation == m_LastRotationValues[(int)hand])
                 return;
 
             var inputEvent = InputSystem.CreateEvent<VREvent>();
@@ -183,8 +182,78 @@ namespace Unity.EditorXR.Input
 
             m_LastPositionValues[(int)hand] = inputEvent.localPosition;
             m_LastRotationValues[(int)hand] = inputEvent.localRotation;
+            m_HasLastPose[(int)hand] = true;
 
             InputSystem.QueueEvent(inputEvent);
+        }
+
+        void ReleaseControls()
+        {
+            for (var hand = VRInputDevice.Handedness.Left;
+                (int)hand <= (int)VRInputDevice.Handedness.Right;
+                hand++)
+            {
+                var deviceIndex = hand == VRInputDevice.Handedness.Left ? 3 : 4;
+                foreach (var button in k_Buttons)
+                {
+                    if (!m_LastButtonValues[(int)hand, (int)button])
+                        continue;
+
+                    var inputEvent = InputSystem.CreateEvent<GenericControlEvent>();
+                    inputEvent.deviceType = typeof(VRInputDevice);
+                    inputEvent.deviceIndex = deviceIndex;
+                    inputEvent.controlIndex = (int)button;
+                    inputEvent.value = 0f;
+                    InputSystem.QueueEvent(inputEvent);
+                    m_LastButtonValues[(int)hand, (int)button] = false;
+                }
+
+                for (var axis = 0; axis < k_AxisCount; ++axis)
+                {
+                    if (!Mathf.Approximately(m_LastAxisValues[(int)hand, axis], 0f))
+                    {
+                        var inputEvent = InputSystem.CreateEvent<GenericControlEvent>();
+                        inputEvent.deviceType = typeof(VRInputDevice);
+                        inputEvent.deviceIndex = deviceIndex;
+                        inputEvent.controlIndex = axis;
+                        inputEvent.value = 0f;
+                        InputSystem.QueueEvent(inputEvent);
+                    }
+
+                    m_LastAxisValues[(int)hand, axis] = 0f;
+                }
+
+                m_HasLastPose[(int)hand] = false;
+            }
+        }
+
+        static XRControllerHand ToBackendHand(VRInputDevice.Handedness hand)
+        {
+            return hand == VRInputDevice.Handedness.Left ? XRControllerHand.Left : XRControllerHand.Right;
+        }
+
+        static bool TryGetButtonUsage(string axis, out InputFeatureUsage<bool> usage)
+        {
+            if (!string.IsNullOrEmpty(axis) && axis.IndexOf("SecondaryButton", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                usage = CommonUsages.secondaryButton;
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(axis) && axis.IndexOf("PrimaryButton", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                usage = CommonUsages.primaryButton;
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(axis) && axis.IndexOf("Primary2DAxisClick", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                usage = CommonUsages.primary2DAxisClick;
+                return true;
+            }
+
+            usage = default(InputFeatureUsage<bool>);
+            return false;
         }
     }
 }

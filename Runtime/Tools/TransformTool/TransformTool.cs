@@ -36,6 +36,7 @@ namespace Unity.EditorXR.Tools
 
         class GrabData
         {
+            readonly IDisposable m_AuthoringScope;
             Vector3[] m_PositionOffsets;
             Quaternion[] m_RotationOffsets;
             Vector3[] m_InitialScales;
@@ -62,13 +63,22 @@ namespace Unity.EditorXR.Tools
 
             public GrabData(Transform rayOrigin, TransformInput input, Transform[] grabbedTransforms, Vector3 contactPoint)
             {
+                m_AuthoringScope = AuthoringSessionMethods.beginScope("Move Selection");
                 this.rayOrigin = rayOrigin;
                 this.input = input;
                 this.grabbedTransforms = grabbedTransforms;
+                foreach (var grabbedTransform in grabbedTransforms)
+                    AuthoringSessionMethods.recordObject(grabbedTransform);
+
                 var inverseRotation = Quaternion.Inverse(rayOrigin.rotation);
                 m_GrabOffset = inverseRotation * (contactPoint - rayOrigin.position);
                 CaptureInitialTransforms();
                 Reset();
+            }
+
+            public void EndAuthoring()
+            {
+                m_AuthoringScope.Dispose();
             }
 
             void CaptureInitialTransforms()
@@ -868,6 +878,7 @@ namespace Unity.EditorXR.Tools
             this.RemoveRayVisibilitySettings(grabData.rayOrigin, this);
 
             this.ClearSnappingState(rayOrigin);
+            grabData.EndAuthoring();
         }
 
         void Translate(Vector3 delta, Transform rayOrigin, AxisFlags constraints)

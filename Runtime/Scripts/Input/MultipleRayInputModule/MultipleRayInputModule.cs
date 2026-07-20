@@ -214,6 +214,8 @@ namespace Unity.EditorXR.Modules
         [SerializeField]
         bool m_ForceModuleActive;
 
+        bool m_CooperativeMode;
+
         float m_PrevActionTime;
         Vector2 m_LastMoveVector;
         int m_ConsecutiveMoveCount;
@@ -254,6 +256,15 @@ namespace Unity.EditorXR.Modules
         {
             get { return m_ForceModuleActive; }
             set { m_ForceModuleActive = value; }
+        }
+
+        /// <summary>
+        /// Keeps this module available to EditorXR ray sources without competing for EventSystem.currentInputModule.
+        /// </summary>
+        public bool cooperativeMode
+        {
+            get { return m_CooperativeMode; }
+            set { m_CooperativeMode = value; }
         }
 
         /// <summary>
@@ -421,6 +432,9 @@ namespace Unity.EditorXR.Modules
 
         public override bool ShouldActivateModule()
         {
+            if (m_CooperativeMode)
+                return false;
+
             if (!base.ShouldActivateModule())
                 return false;
 

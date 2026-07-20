@@ -1,4 +1,0 @@
-[submodule "Runtime/libs/input-prototype"]
-	path = Runtime/libs/input-prototype
-	url=https://github.com/Unity-Technologies/input-prototype.git
-	branch = editorvr/main

@@ -281,6 +281,14 @@ namespace Unity.EditorXR.Tools
         {
             m_LocomotionInput = (LocomotionInput)input;
 
+            // Companion input is read by the Utility updater for chords and two-hand gestures.
+            // It must never run standalone locomotion on the Authoring hand.
+            if (isCompanion)
+            {
+                this.SetUIBlockedForRayOrigin(rayOrigin, false);
+                return;
+            }
+
             this.SetUIBlockedForRayOrigin(rayOrigin, true);
 
             if (DoTwoHandedScaling(consumeControl))

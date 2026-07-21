@@ -28,6 +28,7 @@ namespace Unity.EditorXR.Input
         {
             VRInputDevice.VRControl.Action1,
             VRInputDevice.VRControl.Action2,
+            VRInputDevice.VRControl.Action5,
             VRInputDevice.VRControl.LeftStickButton
         };
 
@@ -136,6 +137,9 @@ namespace Unity.EditorXR.Input
                     else
                         return "XRI_Right_SecondaryButton";
 
+                case VRInputDevice.VRControl.Action5:
+                    return hand == VRInputDevice.Handedness.Left ? "XRI_Left_MenuButton" : null;
+
                 case VRInputDevice.VRControl.LeftStickButton:
                     if (hand == VRInputDevice.Handedness.Left)
                         return "XRI_Left_Primary2DAxisClick";
@@ -243,7 +247,7 @@ namespace Unity.EditorXR.Input
             return hand == VRInputDevice.Handedness.Left ? XRControllerHand.Left : XRControllerHand.Right;
         }
 
-        static bool TryGetButtonUsage(string axis, out InputFeatureUsage<bool> usage)
+        internal static bool TryGetButtonUsage(string axis, out InputFeatureUsage<bool> usage)
         {
             if (!string.IsNullOrEmpty(axis) && axis.IndexOf("SecondaryButton", StringComparison.OrdinalIgnoreCase) >= 0)
             {
@@ -260,6 +264,12 @@ namespace Unity.EditorXR.Input
             if (!string.IsNullOrEmpty(axis) && axis.IndexOf("Primary2DAxisClick", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 usage = CommonUsages.primary2DAxisClick;
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(axis) && axis.IndexOf("MenuButton", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                usage = CommonUsages.menuButton;
                 return true;
             }
 

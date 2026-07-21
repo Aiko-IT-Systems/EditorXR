@@ -197,6 +197,7 @@ namespace Unity.EditorXR
         }
 
         public Node node { private get; set; }
+        public ControllerRole controllerRole { private get; set; }
 
         // Action Map interface members
         public ActionMap actionMap { get { return m_ActionMap; } }
@@ -357,6 +358,14 @@ namespace Unity.EditorXR
                 if (!cancelJustPressed) // Only process selection testing if cancel was not just pressed
                     SelectJustPressedTest(consumeControl, false);
 
+                return;
+            }
+
+            // The Utility stick is dedicated to locomotion. It can still point at and operate an
+            // Authoring-hand menu, but it must not summon the menu while moving.
+            if (controllerRole != ControllerRole.Authoring)
+            {
+                m_CurrentSpatialActionMapInput = null;
                 return;
             }
 

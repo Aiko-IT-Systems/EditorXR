@@ -233,7 +233,7 @@ namespace Unity.EditorXR.Core
             return isLeft == EditorXR.authoringHandLeft ? ControllerRole.Authoring : ControllerRole.Utility;
         }
 
-        static bool ToolSupportsRole(Type toolType, ControllerRole role, out bool companion)
+        internal static bool ToolSupportsRole(Type toolType, ControllerRole role, out bool companion)
         {
             ControllerRoleMask supportedRoles;
             ControllerRoleMask companionRoles;
@@ -343,6 +343,7 @@ namespace Unity.EditorXR.Core
                 var spatialMenu = EditorXRUtils.AddComponent<SpatialMenu>(gameObject);
                 this.ConnectInterfaces(spatialMenu, rayOrigin);
                 this.InjectFunctionalitySingle(spatialMenu);
+                spatialMenu.controllerRole = GetControllerRole(device.node);
                 spatialMenu.Setup();
                 device.spatialMenu = spatialMenu;
             }
@@ -453,8 +454,7 @@ namespace Unity.EditorXR.Core
                 if (device.rayOrigin == rayOrigin)
                 {
                     bool roleCompanion;
-                    if (!ToolSupportsRole(toolType, GetControllerRole(device.node), out roleCompanion)
-                        && !typeof(IMultiDeviceTool).IsAssignableFrom(toolType))
+                    if (!ToolSupportsRole(toolType, GetControllerRole(device.node), out roleCompanion))
                     {
                         Debug.LogWarningFormat("{0} is not available on the {1} controller", toolType.Name,
                             GetControllerRole(device.node));
@@ -504,6 +504,11 @@ namespace Unity.EditorXR.Core
                             {
                                 if (otherDeviceData != device)
                                 {
+                                    bool otherRoleCompanion;
+                                    if (!ToolSupportsRole(toolType, GetControllerRole(otherDeviceData.node),
+                                        out otherRoleCompanion))
+                                        return;
+
                                     HashSet<InputDevice> otherUsedDevices;
                                     var otherToolData = SpawnTool(toolType, out otherUsedDevices, otherDeviceData.inputDevice, otherDeviceData.rayOrigin, deviceInputModule);
                                     foreach (var dd in deviceData)

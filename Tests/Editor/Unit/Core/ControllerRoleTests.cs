@@ -1,5 +1,9 @@
 using NUnit.Framework;
+using Unity.EditorXR.Core;
+using Unity.EditorXR.Input;
+using Unity.EditorXR.Tools;
 using UnityEditor;
+using UnityEngine.XR;
 
 namespace Unity.EditorXR.Tests
 {
@@ -11,6 +15,12 @@ namespace Unity.EditorXR.Tests
 
         [ControllerToolRoles(ControllerRoleMask.Authoring, ControllerRoleMask.Utility)]
         class RoleRestrictedTool { }
+
+        [ControllerToolRoles(ControllerRoleMask.Authoring)]
+        class RoleRestrictedMultiDeviceTool : IMultiDeviceTool
+        {
+            public bool primary { private get; set; }
+        }
 
         [Test]
         public void UnannotatedToolsSupportEitherRole()
@@ -32,6 +42,37 @@ namespace Unity.EditorXR.Tests
 
             Assert.AreEqual(ControllerRoleMask.Authoring, supported);
             Assert.AreEqual(ControllerRoleMask.Utility, companion);
+        }
+
+        [Test]
+        public void MultiDeviceToolsStillHonorExplicitRoleRestrictions()
+        {
+            bool companion;
+            Assert.IsTrue(EditorXRToolModule.ToolSupportsRole(typeof(RoleRestrictedMultiDeviceTool),
+                ControllerRole.Authoring, out companion));
+            Assert.IsFalse(companion);
+            Assert.IsFalse(EditorXRToolModule.ToolSupportsRole(typeof(RoleRestrictedMultiDeviceTool),
+                ControllerRole.Utility, out companion));
+            Assert.IsFalse(companion);
+        }
+
+        [Test]
+        public void LeftMenuBindingResolvesToXRMenuButton()
+        {
+            InputFeatureUsage<bool> usage;
+            Assert.IsTrue(BaseVRInputToEvents.TryGetButtonUsage("XRI_Left_MenuButton", out usage));
+            Assert.AreEqual(CommonUsages.menuButton.name, usage.name);
+        }
+
+        [Test]
+        public void BuiltInRoleMetadataMatchesControllerResponsibilities()
+        {
+            bool companion;
+            Assert.IsFalse(EditorXRToolModule.ToolSupportsRole(typeof(AnnotationTool), ControllerRole.Utility,
+                out companion));
+            Assert.IsTrue(EditorXRToolModule.ToolSupportsRole(typeof(LocomotionTool), ControllerRole.Authoring,
+                out companion));
+            Assert.IsTrue(companion);
         }
 
         [Test]

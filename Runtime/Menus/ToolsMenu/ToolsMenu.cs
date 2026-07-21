@@ -4,7 +4,6 @@ using System.Linq;
 using Unity.EditorXR.Core;
 using Unity.EditorXR.Interfaces;
 using Unity.EditorXR.Modules;
-using Unity.EditorXR.Proxies;
 using Unity.EditorXR.Tools;
 using Unity.EditorXR.Utilities;
 using Unity.XRTools.ModuleLoader;
@@ -43,14 +42,8 @@ namespace Unity.EditorXR.Menus
         HapticPulse m_HidingPulse; // The pulse performed when ending a spatial selection
 #pragma warning restore 649
 
-        float m_AllowToolToggleBeforeThisTime;
-        Vector3 m_SpatialScrollStartPosition;
         ToolsMenuUI m_ToolsMenuUI;
         Type activeButtonType; // used to prevent re-selection of the currently active tool
-
-        readonly BindingDictionary m_Controls = new BindingDictionary();
-        readonly List<ProxyFeedbackRequest> m_ScrollFeedback = new List<ProxyFeedbackRequest>();
-        readonly List<ProxyFeedbackRequest> m_MenuFeedback = new List<ProxyFeedbackRequest>();
 
         public Transform menuOrigin { get; set; }
 
@@ -98,7 +91,6 @@ namespace Unity.EditorXR.Menus
         {
             setButtonForType = CreateToolsMenuButton;
             deleteToolsMenuButton = DeleteToolsMenuButton;
-            InputUtils.GetBindingDictionaryFromActionMap(m_ActionMap, m_Controls);
         }
 
         void OnDestroy()
@@ -169,112 +161,13 @@ namespace Unity.EditorXR.Menus
 
         public void ProcessInput(ActionMapInput input, ConsumeControlDelegate consumeControl)
         {
-            var buttonCount = buttons.Count;
-            if (buttonCount <= k_ActiveToolOrderPosition + 1)
+            var toolslMenuInput = (ToolsMenuInput)input;
+            if (!toolslMenuInput.show.wasJustPressed)
                 return;
 
-            const float kAllowToggleDuration = 0.25f;
-
-            var toolslMenuInput = (ToolsMenuInput)input;
-
-            if (spatialScrollData != null && toolslMenuInput.cancel.wasJustPressed)
-            {
-                consumeControl(toolslMenuInput.cancel);
-                consumeControl(toolslMenuInput.show);
-                consumeControl(toolslMenuInput.select);
-                OnButtonClick();
-                CloseMenu(); // Also ends spatial scroll
-                m_ToolsMenuUI.allButtonsVisible = false;
-            }
-
-            if (toolslMenuInput.show.wasJustPressed)
-                ShowScrollFeedback();
-
-            if (toolslMenuInput.show.wasJustReleased)
-                HideScrollFeedback();
-
-            var alternateMenuOriginPosition = alternateMenuOrigin.position;
-            if (spatialScrollData == null && (toolslMenuInput.show.wasJustPressed || toolslMenuInput.show.isHeld) && toolslMenuInput.select.wasJustPressed)
-            {
-                m_SpatialScrollStartPosition = alternateMenuOriginPosition;
-                m_AllowToolToggleBeforeThisTime = Time.realtimeSinceStartup + kAllowToggleDuration;
-                this.SetSpatialHintControlNode(node);
-                m_ToolsMenuUI.spatiallyScrolling = true; // Triggers the display of the directional hint arrows
-                consumeControl(toolslMenuInput.show);
-                consumeControl(toolslMenuInput.select);
-
-                // Assign initial SpatialScrollData; begin scroll
-                spatialScrollData = this.PerformSpatialScroll(node, m_SpatialScrollStartPosition, alternateMenuOriginPosition, 0.325f, m_ToolsMenuUI.buttons.Count, m_ToolsMenuUI.maxButtonCount);
-
-                HideScrollFeedback();
-                ShowMenuFeedback();
-            }
-            else if (spatialScrollData != null && toolslMenuInput.show.isHeld)
-            {
-                consumeControl(toolslMenuInput.show);
-                consumeControl(toolslMenuInput.select);
-
-                // Attempt to close a button, if a scroll has passed the trigger threshold
-                if (spatialScrollData != null && toolslMenuInput.select.wasJustPressed)
-                {
-                    if (m_ToolsMenuUI.DeleteHighlightedButton())
-                        buttonCount = buttons.Count; // The MainMenu button will be hidden, subtract 1 from the activeButtonCount
-
-                    if (buttonCount <= k_ActiveToolOrderPosition + 1)
-                    {
-                        if (spatialScrollData != null)
-                            this.EndSpatialScroll();
-
-                        return;
-                    }
-                }
-
-                // normalized input should loop after reaching the 0.15f length
-                buttonCount -= 1; // Decrement to disallow cycling through the main menu button
-                spatialScrollData = this.PerformSpatialScroll(node, m_SpatialScrollStartPosition, alternateMenuOriginPosition, 0.325f, m_ToolsMenuUI.buttons.Count, m_ToolsMenuUI.maxButtonCount);
-                var normalizedRepeatingPosition = spatialScrollData.normalizedLoopingPosition;
-                if (!Mathf.Approximately(normalizedRepeatingPosition, 0f))
-                {
-                    if (!m_ToolsMenuUI.allButtonsVisible)
-                    {
-                        m_ToolsMenuUI.spatialDragDistance = spatialScrollData.dragDistance;
-                        this.SetSpatialHintState(SpatialHintState.CenteredScrolling);
-                        m_ToolsMenuUI.allButtonsVisible = true;
-                    }
-                    else if (spatialScrollData.spatialDirection != null)
-                    {
-                        m_ToolsMenuUI.startingDragOrigin = spatialScrollData.spatialDirection;
-                    }
-
-                    m_ToolsMenuUI.HighlightSingleButtonWithoutMenu((int)(buttonCount * normalizedRepeatingPosition) + 1);
-                }
-            }
-            else if (spatialScrollData != null && !toolslMenuInput.show.isHeld && !toolslMenuInput.select.isHeld)
-            {
-                consumeControl(toolslMenuInput.show);
-                consumeControl(toolslMenuInput.select);
-
-                if (spatialScrollData != null && spatialScrollData.passedMinDragActivationThreshold)
-                {
-                    m_ToolsMenuUI.SelectHighlightedButton();
-                }
-                else if (Time.realtimeSinceStartup < m_AllowToolToggleBeforeThisTime)
-                {
-                    // Allow for single press+release to cycle through tools
-                    m_ToolsMenuUI.SelectNextExistingToolButton();
-                    OnButtonClick();
-                }
-
-                CloseMenu();
-            }
-            else if (spatialScrollData == null && (toolslMenuInput.show.wasJustPressed || toolslMenuInput.show.isHeld))
-            {
-                // Consume the control to activate spatial scrolling - so nothing else fires accidentally when attempting to engage this feature
-                if (toolslMenuInput.select.rawValue > 0.0f)
-                {
-                    consumeControl(toolslMenuInput.select);
-                }
-            }
+            consumeControl(toolslMenuInput.show);
+            OnButtonClick();
+            this.MainMenuActivatorSelected(rayOrigin);
         }
 
         void OnButtonClick()
@@ -302,54 +195,6 @@ namespace Unity.EditorXR.Menus
             this.ClearFeedbackRequests(this);
             this.Pulse(node, m_HidingPulse);
             this.EndSpatialScroll(); // Free the spatial scroll data owned by this object
-        }
-
-        void ShowFeedback(List<ProxyFeedbackRequest> requests, string controlName, string tooltipText = null)
-        {
-            if (tooltipText == null)
-                tooltipText = controlName;
-
-            List<VRInputDevice.VRControl> ids;
-            if (m_Controls.TryGetValue(controlName, out ids))
-            {
-                foreach (var id in ids)
-                {
-                    var request = this.GetFeedbackRequestObject<ProxyFeedbackRequest>(this);
-                    request.node = node;
-                    request.control = id;
-                    request.priority = 1;
-                    request.tooltipText = tooltipText;
-                    requests.Add(request);
-                    this.AddFeedbackRequest(request);
-                }
-            }
-        }
-
-        void ShowScrollFeedback()
-        {
-            ShowFeedback(m_ScrollFeedback, "select", "Scroll to Change Tool");
-        }
-
-        void ShowMenuFeedback()
-        {
-            ShowFeedback(m_MenuFeedback, "select", "Remove Tool");
-            ShowFeedback(m_MenuFeedback, "cancel", "Cancel Scrolling");
-            ShowFeedback(m_MenuFeedback, "show", "Release to Select Tool");
-        }
-
-        void HideFeedback(List<ProxyFeedbackRequest> requests)
-        {
-            foreach (var request in requests)
-            {
-                this.RemoveFeedbackRequest(request);
-            }
-
-            requests.Clear();
-        }
-
-        void HideScrollFeedback()
-        {
-            HideFeedback(m_ScrollFeedback);
         }
 
         public void FakeActivate()

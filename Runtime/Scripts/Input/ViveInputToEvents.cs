@@ -33,8 +33,7 @@ namespace Unity.EditorXR.Input
                         return "XRI_Right_Primary2DAxisClick";
             }
 
-            // Not all buttons are currently mapped
-            return null;
+            return base.GetButtonAxis(hand, button);
         }
     }
 }

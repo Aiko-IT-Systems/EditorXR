@@ -16,9 +16,9 @@ namespace Unity.EditorXR.UI
         bool m_CapsLock;
         bool m_Shift;
 
-        public override void OpenKeyboard()
+        protected override bool SupportsMultipleLines()
         {
-            // AE 12/6/16 - Disabling for now since it is not completely functional
+            return m_LineType == LineType.MultiLine;
         }
 
         protected override void Append(char c)

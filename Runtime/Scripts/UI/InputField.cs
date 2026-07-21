@@ -17,6 +17,8 @@ namespace Unity.EditorXR.UI
 {
     abstract class InputField : Selectable, ISelectionFlags, IUsesViewerScale, IAllWorkspaces
     {
+        static InputField s_NativeKeyboardOwner;
+
         public SelectionFlags selectionFlags
         {
             get { return m_SelectionFlags; }
@@ -50,6 +52,9 @@ namespace Unity.EditorXR.UI
 #pragma warning restore 649
 
         bool m_KeyboardOpen;
+
+        TouchScreenKeyboard m_NativeKeyboard;
+        string m_NativeKeyboardInitialText;
 
         Coroutine m_MoveKeyboardCoroutine;
 
@@ -114,9 +119,36 @@ namespace Unity.EditorXR.UI
 
         protected override void OnDisable()
         {
+            if (m_NativeKeyboard != null)
+                CloseKeyboard();
+
             // hide the keyboard if there are 0 open inspectors or the selection is null
             if (m_KeyboardOpen && (Selection.activeObject == null || !FindAnyOpenInspector()))
                 CloseKeyboard(true);
+
+            base.OnDisable();
+        }
+
+        void Update()
+        {
+            if (m_NativeKeyboard == null)
+                return;
+
+            var nativeText = m_NativeKeyboard.text ?? string.Empty;
+            if (nativeText != m_Text)
+                ApplyNativeKeyboardText(nativeText);
+
+            switch (m_NativeKeyboard.status)
+            {
+                case TouchScreenKeyboard.Status.Done:
+                case TouchScreenKeyboard.Status.LostFocus:
+                    CloseKeyboard();
+                    break;
+                case TouchScreenKeyboard.Status.Canceled:
+                    ApplyNativeKeyboardText(m_NativeKeyboardInitialText);
+                    CloseKeyboard();
+                    break;
+            }
         }
 
         protected void SendOnValueChangedAndUpdateLabel()
@@ -168,6 +200,14 @@ namespace Unity.EditorXR.UI
 
             m_KeyboardOpen = true;
 
+            if (TryOpenNativeKeyboard())
+            {
+#if UNITY_EDITOR
+                UnityEditor.Undo.IncrementCurrentGroup();
+#endif
+                return;
+            }
+
             m_Keyboard = spawnKeyboard();
 
             m_Keyboard.gameObject.SetActive(true);
@@ -213,12 +253,26 @@ namespace Unity.EditorXR.UI
         /// <returns>If a keyboard was closed</returns>
         public virtual bool CloseKeyboard(bool collapse = false)
         {
-            if (m_Keyboard == null || !m_KeyboardOpen)
+            if (!m_KeyboardOpen)
                 return false;
 
             m_KeyboardOpen = false;
 
             this.StopCoroutine(ref m_MoveKeyboardCoroutine);
+
+            if (m_NativeKeyboard != null)
+            {
+                m_NativeKeyboard.active = false;
+                m_NativeKeyboard = null;
+                m_NativeKeyboardInitialText = null;
+                if (s_NativeKeyboardOwner == this)
+                    s_NativeKeyboardOwner = null;
+
+                return true;
+            }
+
+            if (m_Keyboard == null)
+                return true;
 
             if (collapse)
                 m_Keyboard.Collapse(FinalizeClose);
@@ -226,6 +280,62 @@ namespace Unity.EditorXR.UI
                 FinalizeClose();
 
             return true;
+        }
+
+        bool TryOpenNativeKeyboard()
+        {
+            if (!TouchScreenKeyboard.isSupported)
+                return false;
+
+            try
+            {
+                if (s_NativeKeyboardOwner != null && s_NativeKeyboardOwner != this)
+                    s_NativeKeyboardOwner.CloseKeyboard();
+
+                m_NativeKeyboardInitialText = m_Text;
+                m_NativeKeyboard = TouchScreenKeyboard.Open(m_Text, TouchScreenKeyboardType.Default, false,
+                    SupportsMultipleLines(), false, false, string.Empty, m_CharacterLimit);
+                if (m_NativeKeyboard != null)
+                    s_NativeKeyboardOwner = this;
+
+                return m_NativeKeyboard != null;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarningFormat("EditorXR could not open the native XR keyboard; using the spatial keyboard instead. {0}",
+                    exception.Message);
+                m_NativeKeyboard = null;
+                m_NativeKeyboardInitialText = null;
+                return false;
+            }
+        }
+
+        protected virtual bool SupportsMultipleLines()
+        {
+            return false;
+        }
+
+        protected virtual void ApplyNativeKeyboardText(string value)
+        {
+            var filtered = FilterNativeKeyboardText(value);
+
+            if (filtered == m_Text)
+                return;
+
+            text = filtered;
+            SendOnValueChangedAndUpdateLabel();
+        }
+
+        protected string FilterNativeKeyboardText(string value)
+        {
+            var filtered = string.Empty;
+            foreach (var character in value)
+            {
+                if (IsValid(character))
+                    filtered += character;
+            }
+
+            return filtered;
         }
 
         void FinalizeClose()
@@ -275,7 +385,7 @@ namespace Unity.EditorXR.UI
 
         protected virtual bool IsValid(char c)
         {
-            return m_TextComponent.font.HasCharacter(c);
+            return m_TextComponent == null || m_TextComponent.font == null || m_TextComponent.font.HasCharacter(c);
         }
 
         protected virtual void Escape()

@@ -137,6 +137,7 @@ namespace Unity.EditorXR.Workspaces
         const float k_ResizeIconSmoothFollow = 10f;
 
         const float k_FrontFrameZOffset = 0.088f;
+        const float k_MoveAcquisitionPadding = 0.025f;
 
         static readonly Vector3 k_BaseFrontPanelRotation = Vector3.zero;
         static readonly Vector3 k_MaxFrontPanelRotation = new Vector3(90f, 0f, 0f);
@@ -812,12 +813,9 @@ namespace Unity.EditorXR.Workspaces
             if (!hasLeft)
                 HideLeftResizeFeedback();
 
-            var adjustedBounds = this.adjustedBounds;
             if (!dragRayOrigin)
             {
-                var leftPosition = transform.InverseTransformPoint(leftRayOrigin.position);
-                var leftPointerPosition = transform.InverseTransformPoint(this.GetPointerPosition(leftRayOrigin));
-                if (adjustedBounds.Contains(leftPosition) || adjustedBounds.Contains(leftPointerPosition))
+                if (IsRayTargetingWorkspace(leftRayOrigin))
                 {
                     if (m_LeftMoveFeedback.Count == 0)
                         ShowLeftMoveFeedback();
@@ -834,9 +832,7 @@ namespace Unity.EditorXR.Workspaces
                     HideLeftMoveFeedback();
                 }
 
-                var rightPosition = transform.InverseTransformPoint(rightRayOrigin.position);
-                var rightPointerPosition = transform.InverseTransformPoint(this.GetPointerPosition(rightRayOrigin));
-                if (adjustedBounds.Contains(rightPosition) || adjustedBounds.Contains(rightPointerPosition))
+                if (IsRayTargetingWorkspace(rightRayOrigin))
                 {
                     if (m_RightMoveFeedback.Count == 0)
                         ShowRightMoveFeedback();
@@ -870,6 +866,35 @@ namespace Unity.EditorXR.Workspaces
                 highlightsVisible = true;
             }
         }
+
+        bool IsRayTargetingWorkspace(Transform rayOrigin)
+        {
+            if (!rayOrigin)
+                return false;
+
+            var acquisitionBounds = adjustedBounds;
+            acquisitionBounds.Expand(new Vector3(k_MoveAcquisitionPadding, k_MoveAcquisitionPadding * 2f,
+                k_MoveAcquisitionPadding));
+
+            var localRayOrigin = transform.InverseTransformPoint(rayOrigin.position);
+            if (acquisitionBounds.Contains(localRayOrigin))
+                return true;
+
+            var localPointerPosition = transform.InverseTransformPoint(this.GetPointerPosition(rayOrigin));
+            if (acquisitionBounds.Contains(localPointerPosition))
+                return true;
+
+            var localRayVector = localPointerPosition - localRayOrigin;
+            var pointerLength = localRayVector.magnitude;
+            if (pointerLength < Mathf.Epsilon)
+                return false;
+
+            float hitDistance;
+            var localRay = new Ray(localRayOrigin, localRayVector / pointerLength);
+            return acquisitionBounds.IntersectRay(localRay, out hitDistance)
+                && hitDistance <= pointerLength + k_MoveAcquisitionPadding;
+        }
+
         void OnDestroy()
         {
             UnityObjectUtils.Destroy(m_TopFaceMaterial);

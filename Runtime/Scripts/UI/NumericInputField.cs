@@ -142,6 +142,26 @@ namespace Unity.EditorXR.UI
             return base.CloseKeyboard(collapse);
         }
 
+        protected override void ApplyNativeKeyboardText(string value)
+        {
+            var filtered = FilterNativeKeyboardText(value);
+            if (filtered == m_Text)
+                return;
+
+            text = filtered;
+            m_OperandCount = 0;
+            foreach (var character in m_Text)
+            {
+                if (IsOperand(character))
+                    m_OperandCount++;
+            }
+
+            if (IsExpression())
+                UpdateLabel();
+            else
+                SendOnValueChangedAndUpdateLabel();
+        }
+
         protected override bool IsValid(char ch)
         {
             if (!base.IsValid(ch))

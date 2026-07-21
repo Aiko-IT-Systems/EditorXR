@@ -29,7 +29,7 @@ namespace Unity.EditorXR.Authoring
     [Serializable]
     internal sealed class AuthoringRecoveryData
     {
-        public const int CurrentVersion = 2;
+        public const int CurrentVersion = 3;
 
         public int version = CurrentVersion;
         public string sessionId;

@@ -1293,21 +1293,28 @@ namespace Unity.EditorXR.Authoring
         {
             if (s_Data == null || s_Data.version >= AuthoringRecoveryData.CurrentVersion)
                 return false;
-            if (s_Data.version != 1)
+            if (s_Data.version != 1 && s_Data.version != 2)
                 return false;
 
-            s_Data.changeSet.deletions.RemoveAll(id => !s_BaselineIds.Contains(id));
-            s_Data.changeSet.updates.RemoveAll(update => !s_BaselineIds.Contains(update.targetGlobalObjectId));
-            foreach (var update in s_Data.changeSet.updates)
-                update.properties.RemoveAll(property => !AuthoringSnapshotUtility.IsSafePropertyPath(property.propertyPath));
-            foreach (var creation in s_Data.changeSet.creations)
-                RemoveUnsafeCreatedProperties(creation.root);
+            if (s_Data.version == 1)
+            {
+                s_Data.changeSet.deletions.RemoveAll(id => !s_BaselineIds.Contains(id));
+                s_Data.changeSet.updates.RemoveAll(update => !s_BaselineIds.Contains(update.targetGlobalObjectId));
+                foreach (var update in s_Data.changeSet.updates)
+                    update.properties.RemoveAll(property => !AuthoringSnapshotUtility.IsSafePropertyPath(property.propertyPath));
+                foreach (var creation in s_Data.changeSet.creations)
+                    RemoveUnsafeCreatedProperties(creation.root);
 
-            s_Data.changeSet.diagnostics.RemoveAll(diagnostic =>
-                diagnostic != null && !string.IsNullOrEmpty(diagnostic.message)
-                && (diagnostic.message.StartsWith("A destroyed hierarchy could not be matched", StringComparison.Ordinal)
-                    || diagnostic.message.StartsWith("Deleted target can no longer be resolved", StringComparison.Ordinal)
-                    || diagnostic.message.StartsWith("Updated target can no longer be resolved", StringComparison.Ordinal)));
+                s_Data.changeSet.diagnostics.RemoveAll(diagnostic =>
+                    diagnostic != null && !string.IsNullOrEmpty(diagnostic.message)
+                    && (diagnostic.message.StartsWith("A destroyed hierarchy could not be matched", StringComparison.Ordinal)
+                        || diagnostic.message.StartsWith("Deleted target can no longer be resolved", StringComparison.Ordinal)
+                        || diagnostic.message.StartsWith("Updated target can no longer be resolved", StringComparison.Ordinal)));
+            }
+
+            // Package-owned preview scenes (for example NDMF) are transient and cannot be recovered in Edit Mode.
+            s_Data.scenePaths.RemoveAll(path =>
+                string.IsNullOrEmpty(path) || !path.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase));
             s_Data.version = AuthoringRecoveryData.CurrentVersion;
             s_Data.scriptFingerprint = ComputeScriptFingerprint();
             return true;

@@ -69,11 +69,33 @@ namespace Unity.EditorXR.Tests.Authoring
             data.changeSet.deletions.Add("GlobalObjectId_V1-2-test-1-0");
             data.changeSet.diagnostics.Add(new AuthoringDiagnostic(true, "blocked"));
 
-            var restored = JsonUtility.FromJson<AuthoringRecoveryData>(JsonUtility.ToJson(data));
+            var restored = AuthoringRecoverySerializer.FromJson(AuthoringRecoverySerializer.ToJson(data));
 
             Assert.AreEqual("session", restored.sessionId);
             Assert.AreEqual(1, restored.changeSet.deletions.Count);
             Assert.IsTrue(restored.changeSet.diagnostics[0].blocking);
+        }
+
+        [Test]
+        public void RecoveryData_RoundTripsDeepCreatedHierarchy()
+        {
+            var data = new AuthoringRecoveryData();
+            var snapshot = new AuthoringHierarchySnapshot { root = new AuthoringCreatedNode { name = "Level 0" } };
+            data.changeSet.creations.Add(snapshot);
+            var current = snapshot.root;
+            for (var depth = 1; depth <= 20; ++depth)
+            {
+                var child = new AuthoringCreatedNode { name = "Level " + depth };
+                current.children.Add(child);
+                current = child;
+            }
+
+            var restored = AuthoringRecoverySerializer.FromJson(AuthoringRecoverySerializer.ToJson(data));
+            current = restored.changeSet.creations[0].root;
+            for (var depth = 1; depth <= 20; ++depth)
+                current = current.children[0];
+
+            Assert.AreEqual("Level 20", current.name);
         }
 
         GameObject CreateGameObject(string name)

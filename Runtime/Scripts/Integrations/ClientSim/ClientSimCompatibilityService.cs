@@ -2,6 +2,7 @@ using System;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
+using Unity.EditorXR.Interfaces;
 using UnityEngine;
 
 namespace Unity.EditorXR.ClientSim
@@ -81,6 +82,8 @@ namespace Unity.EditorXR.ClientSim
         public void Revalidate()
         {
             ReleaseInjectedState();
+            if (m_Adapter != null)
+                m_Adapter.ReleaseTrackingOverride();
             m_Adapter = null;
             m_LoggedFailure = m_LoggedReady = false;
             ValidateContract();
@@ -92,6 +95,13 @@ namespace Unity.EditorXR.ClientSim
             s_Instance = this;
             m_ActiveMode = m_ControlMode;
             ValidateContract();
+        }
+
+        void OnEnable()
+        {
+            ClientSimControlMethods.clientSimControlsActive = () => s_Instance != null
+                && s_Instance.isActiveAndEnabled
+                && s_Instance.m_ActiveMode == ClientSimControlMode.ClientSim;
         }
 
         void Update()
@@ -112,12 +122,27 @@ namespace Unity.EditorXR.ClientSim
                 catch (Exception exception) { FailClosed("Runtime binding failed: " + exception.Message); return; }
             }
             ClientSimXRFrame frame;
-            if (m_ActiveMode == ClientSimControlMode.ClientSim && ClientSimMetaXRInput.TryGetFrame(out frame))
+            if (ClientSimMetaXRInput.TryGetFrame(out frame))
                 ProcessFrame(frame);
         }
 
-        void OnDisable() { ReleaseInjectedState(); }
-        void OnDestroy() { if (s_Instance == this) s_Instance = null; }
+        void OnDisable()
+        {
+            ReleaseInjectedState();
+            if (m_Adapter != null)
+                m_Adapter.ReleaseTrackingOverride();
+            if (s_Instance == this)
+                ClientSimControlMethods.clientSimControlsActive = () => false;
+        }
+
+        void OnDestroy()
+        {
+            if (s_Instance != this)
+                return;
+
+            s_Instance = null;
+            ClientSimControlMethods.clientSimControlsActive = () => false;
+        }
 
         void ValidateContract()
         {
@@ -138,9 +163,16 @@ namespace Unity.EditorXR.ClientSim
             try
             {
                 m_Adapter.ApplyTracking(frame);
-                m_Adapter.SendChanges(m_PreviousLeft, frame.leftController, m_PreviousRight, frame.rightController);
-                m_PreviousLeft = frame.leftController;
-                m_PreviousRight = frame.rightController;
+                if (m_ActiveMode == ClientSimControlMode.ClientSim)
+                {
+                    if ((!m_PreviousLeft.use && frame.leftController.use)
+                        || (!m_PreviousRight.use && frame.rightController.use))
+                        m_EventSystem.TryClickActiveObject("AcceptButton");
+
+                    m_Adapter.SendChanges(m_PreviousLeft, frame.leftController, m_PreviousRight, frame.rightController);
+                    m_PreviousLeft = frame.leftController;
+                    m_PreviousRight = frame.rightController;
+                }
                 return true;
             }
             catch (Exception exception) { FailClosed("Frame bridge failed: " + exception.Message); return false; }
@@ -172,6 +204,11 @@ namespace Unity.EditorXR.ClientSim
         {
             m_Status = ClientSimCompatibilityStatus.Incompatible;
             m_Diagnostic = reason + " Integration has been disabled.";
+            if (m_Adapter != null)
+            {
+                try { m_Adapter.ReleaseTrackingOverride(); }
+                catch (Exception) { }
+            }
             m_Adapter = null;
             if (!m_LoggedFailure) { Debug.LogError("[EditorXR ClientSim] " + m_Diagnostic, this); m_LoggedFailure = true; }
         }

@@ -302,14 +302,7 @@ namespace Unity.EditorXR.Authoring
                 foreach (var root in scene.GetRootGameObjects())
                 {
                     foreach (var transform in root.GetComponentsInChildren<Transform>(true))
-                    {
                         AddBaselineObject(transform.gameObject);
-                        foreach (var component in transform.GetComponents<Component>())
-                        {
-                            if (component)
-                                AddBaselineObject(component);
-                        }
-                    }
                 }
             }
         }
@@ -333,11 +326,23 @@ namespace Unity.EditorXR.Authoring
             if (s_Data == null)
                 return;
 
-            foreach (var entry in s_Data.baseline)
+            var baselineIds = new HashSet<string>(s_Data.baseline.Select(entry => entry.globalObjectId));
+            foreach (var scenePath in s_Data.scenePaths)
             {
-                var target = AuthoringSnapshotUtility.ResolveGlobalId(entry.globalObjectId);
-                if (target)
-                    s_ExistingInstanceIds[target.GetInstanceID()] = entry.globalObjectId;
+                var scene = AuthoringSnapshotUtility.FindLoadedScene(scenePath);
+                if (!scene.IsValid())
+                    continue;
+
+                foreach (var root in scene.GetRootGameObjects())
+                {
+                    foreach (var transform in root.GetComponentsInChildren<Transform>(true))
+                    {
+                        string id;
+                        if (AuthoringSnapshotUtility.TryGetGlobalId(transform.gameObject, out id)
+                            && baselineIds.Contains(id))
+                            s_ExistingInstanceIds[transform.gameObject.GetInstanceID()] = id;
+                    }
+                }
             }
         }
 
@@ -1232,7 +1237,7 @@ namespace Unity.EditorXR.Authoring
                 return;
             s_Data.updatedUtcTicks = DateTime.UtcNow.Ticks;
             Directory.CreateDirectory(Path.GetDirectoryName(k_RecoveryPath));
-            File.WriteAllText(k_RecoveryPath, JsonUtility.ToJson(s_Data, true));
+            File.WriteAllText(k_RecoveryPath, AuthoringRecoverySerializer.ToJson(s_Data));
         }
 
         static void LoadRecovery()
@@ -1241,7 +1246,7 @@ namespace Unity.EditorXR.Authoring
                 return;
             try
             {
-                s_Data = JsonUtility.FromJson<AuthoringRecoveryData>(File.ReadAllText(k_RecoveryPath));
+                s_Data = AuthoringRecoverySerializer.FromJson(File.ReadAllText(k_RecoveryPath));
             }
             catch (Exception exception)
             {

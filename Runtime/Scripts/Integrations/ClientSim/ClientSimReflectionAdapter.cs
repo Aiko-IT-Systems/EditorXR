@@ -13,15 +13,18 @@ namespace Unity.EditorXR.ClientSim
     {
         public const string ExpectedVersion = "3.10.4";
         const BindingFlags k_All = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
-        readonly FieldInfo m_MainInstance, m_MainInputManager, m_Input, m_Head, m_LeftHand, m_RightHand;
+        readonly FieldInfo m_MainInstance, m_MainInputManager, m_Input, m_Head, m_LeftHand, m_RightHand,
+            m_MouseReleased, m_PlayerXRotationBase, m_PlayerYRotationBase;
         readonly Type m_TrackingProviderType;
         readonly MethodInfo m_HasInstance, m_SendJump, m_SendUse, m_SendGrab, m_SendDrop, m_SendMenu, m_SendRun,
             m_SendInputMethod;
         readonly object m_LeftHandValue, m_RightHandValue, m_OculusInputMethod;
-        object m_InputObject;
-        Transform m_HeadTransform, m_LeftHandTransform, m_RightHandTransform;
+        object m_InputObject, m_TrackingProvider;
+        Transform m_HeadTransform, m_LeftHandTransform, m_RightHandTransform, m_PlayerXRotationTransform,
+            m_PlayerYRotationTransform;
+        bool m_PreviousMouseReleased;
 
-        public bool isBound { get { return m_InputObject != null && m_HeadTransform != null; } }
+        public bool isBound { get { return m_InputObject != null && m_TrackingProvider != null && m_HeadTransform != null; } }
 
         ClientSimReflectionAdapter(Assembly assembly)
         {
@@ -30,6 +33,7 @@ namespace Unity.EditorXR.ClientSim
             var inputBase = RequireType(assembly, "VRC.SDK3.ClientSim.ClientSimInputBase");
             var inputAction = RequireType(assembly, "VRC.SDK3.ClientSim.ClientSimInputActionBased");
             m_TrackingProviderType = RequireType(assembly, "VRC.SDK3.ClientSim.ClientSimTrackingProviderBase");
+            var desktopTrackingProvider = RequireType(assembly, "VRC.SDK3.ClientSim.ClientSimDesktopTrackingProvider");
             var inputModule = RequireType(assembly, "VRC.SDK3.ClientSim.ClientSimInputModule");
             var handType = RequireType("VRC.Udon.Common.HandType");
             var inputMethodType = RequireType("VRC.SDKBase.VRCInputMethod");
@@ -44,6 +48,9 @@ namespace Unity.EditorXR.ClientSim
             m_Head = RequireField(m_TrackingProviderType, "head", typeof(Transform), false);
             m_LeftHand = RequireField(m_TrackingProviderType, "leftHand", typeof(Transform), false);
             m_RightHand = RequireField(m_TrackingProviderType, "rightHand", typeof(Transform), false);
+            m_MouseReleased = RequireField(desktopTrackingProvider, "_mouseReleased", typeof(bool), false);
+            m_PlayerXRotationBase = RequireField(desktopTrackingProvider, "playerXRotationBase", typeof(Transform), false);
+            m_PlayerYRotationBase = RequireField(desktopTrackingProvider, "playerYRotationBase", typeof(Transform), false);
             var handArgs = new[] { typeof(bool), handType };
             m_SendJump = RequireMethod(inputBase, "SendJumpEvent", typeof(void), handArgs);
             m_SendUse = RequireMethod(inputBase, "SendUseEvent", typeof(void), handArgs);
@@ -129,23 +136,53 @@ namespace Unity.EditorXR.ClientSim
                 m_InputObject = null;
                 return false;
             }
-            m_HeadTransform = (Transform)m_Head.GetValue(providers[0]);
-            m_LeftHandTransform = (Transform)m_LeftHand.GetValue(providers[0]);
-            m_RightHandTransform = (Transform)m_RightHand.GetValue(providers[0]);
+            m_TrackingProvider = providers[0];
+            m_HeadTransform = (Transform)m_Head.GetValue(m_TrackingProvider);
+            m_LeftHandTransform = (Transform)m_LeftHand.GetValue(m_TrackingProvider);
+            m_RightHandTransform = (Transform)m_RightHand.GetValue(m_TrackingProvider);
             if (m_HeadTransform == null || m_LeftHandTransform == null || m_RightHandTransform == null)
             {
                 m_InputObject = null;
                 return false;
             }
+            m_PreviousMouseReleased = (bool)m_MouseReleased.GetValue(m_TrackingProvider);
+            m_MouseReleased.SetValue(m_TrackingProvider, true);
+            m_PlayerXRotationTransform = (Transform)m_PlayerXRotationBase.GetValue(m_TrackingProvider);
+            m_PlayerYRotationTransform = (Transform)m_PlayerYRotationBase.GetValue(m_TrackingProvider);
+            ResetDesktopRotation();
             m_SendInputMethod.Invoke(m_InputObject, new[] { m_OculusInputMethod });
             return true;
         }
 
         public void ApplyTracking(ClientSimXRFrame frame)
         {
+            m_MouseReleased.SetValue(m_TrackingProvider, true);
+            ResetDesktopRotation();
             ApplyPose(m_HeadTransform, frame.head);
             ApplyPose(m_LeftHandTransform, frame.leftHand);
             ApplyPose(m_RightHandTransform, frame.rightHand);
+        }
+
+        public void ReleaseTrackingOverride()
+        {
+            if (m_TrackingProvider != null)
+                m_MouseReleased.SetValue(m_TrackingProvider, m_PreviousMouseReleased);
+
+            m_TrackingProvider = null;
+            m_InputObject = null;
+            m_HeadTransform = null;
+            m_LeftHandTransform = null;
+            m_RightHandTransform = null;
+            m_PlayerXRotationTransform = null;
+            m_PlayerYRotationTransform = null;
+        }
+
+        void ResetDesktopRotation()
+        {
+            if (m_PlayerXRotationTransform != null)
+                m_PlayerXRotationTransform.localRotation = Quaternion.identity;
+            if (m_PlayerYRotationTransform != null)
+                m_PlayerYRotationTransform.localRotation = Quaternion.identity;
         }
 
         public void SendChanges(ClientSimControllerState oldLeft, ClientSimControllerState left,

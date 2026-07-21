@@ -1,5 +1,6 @@
 using System;
 using Unity.EditorXR.Core.XR;
+using Unity.EditorXR.Interfaces;
 using UnityEngine;
 using UnityEngine.InputNew;
 using UnityEngine.XR;
@@ -15,10 +16,11 @@ namespace Unity.EditorXR.Input
 
         const uint k_ControllerCount = 2;
         const int k_AxisCount = (int)VRInputDevice.VRControl.Analog9 + 1;
+        const int k_ControlCount = (int)VRInputDevice.VRControl.Start + 1;
         const float k_DeadZone = 0.05f;
 
         float[,] m_LastAxisValues = new float[k_ControllerCount, k_AxisCount];
-        bool[,] m_LastButtonValues = new bool[k_ControllerCount, k_AxisCount];
+        bool[,] m_LastButtonValues = new bool[k_ControllerCount, k_ControlCount];
         Vector3[] m_LastPositionValues = new Vector3[k_ControllerCount];
         Quaternion[] m_LastRotationValues = new Quaternion[k_ControllerCount];
         bool[] m_HasLastPose = new bool[k_ControllerCount];
@@ -31,6 +33,15 @@ namespace Unity.EditorXR.Input
 
 		public void Update()
         {
+            if (ClientSimControlMethods.clientSimControlsActive())
+            {
+                if (active)
+                    ReleaseControls();
+
+                active = false;
+                return;
+            }
+
             var backend = EditorXRXRDevices.backend;
             backend.RefreshDevices();
             var deviceActive = backend.IsControllerConnected(XRControllerHand.Left, DeviceName)

@@ -6,6 +6,8 @@ Start a session with `Window > EditorXR > Authoring > Start VR Authoring Session
 
 When ClientSim is installed, VR controls initially target ClientSim so its startup acknowledgement is usable in-headset. Press `F8` or use `Window > EditorXR > ClientSim > Toggle VR Control Mode` to switch between ClientSim and EditorXR authoring controls.
 
+XR pose tracking remains active in both modes. Only button and tool input ownership changes: ClientSim mode suppresses EditorXR controller events, while Authoring mode releases ClientSim button state.
+
 ## Tool integration
 
 The stock transform, primitive creation, prefab/model placement, project-asset assignment, duplicate, paste, and delete workflows are instrumented. New or custom tools must keep an authoring scope open for their complete Undo-backed interaction:

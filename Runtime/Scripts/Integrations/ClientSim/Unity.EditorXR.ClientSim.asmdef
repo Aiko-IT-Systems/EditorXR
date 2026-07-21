@@ -1,7 +1,9 @@
 {
     "name": "Unity.EditorXR.ClientSim",
     "rootNamespace": "Unity.EditorXR.ClientSim",
-    "references": [],
+    "references": [
+        "Unity.EditorXR.Interfaces"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

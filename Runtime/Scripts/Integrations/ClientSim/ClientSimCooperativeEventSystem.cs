@@ -58,6 +58,24 @@ namespace Unity.EditorXR.ClientSim
             m_Pointers.Clear();
         }
 
+        public bool TryClickActiveObject(string objectName)
+        {
+            var system = EventSystem.current;
+            if (system == null)
+                return false;
+
+            foreach (var candidate in Resources.FindObjectsOfTypeAll<GameObject>())
+            {
+                if (!candidate.activeInHierarchy || candidate.name != objectName)
+                    continue;
+
+                var data = new PointerEventData(system);
+                return ExecuteEvents.ExecuteHierarchy(candidate, data, ExecuteEvents.pointerClickHandler) != null;
+            }
+
+            return false;
+        }
+
         static void SetHover(PointerState state, GameObject target)
         {
             if (state.hover == target)

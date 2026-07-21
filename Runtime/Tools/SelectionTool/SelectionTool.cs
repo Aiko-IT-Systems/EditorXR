@@ -6,6 +6,7 @@ using Unity.EditorXR.Interfaces;
 using Unity.EditorXR.Proxies;
 using Unity.EditorXR.UI;
 using Unity.EditorXR.Utilities;
+using Unity.EditorXR.Workspaces;
 using Unity.XRTools.ModuleLoader;
 using Unity.XRTools.Utils;
 using UnityEditor;

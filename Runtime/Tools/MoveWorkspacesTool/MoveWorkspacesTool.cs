@@ -10,6 +10,7 @@ using UnityEngine.InputNew;
 namespace Unity.EditorXR.Tools
 {
     [ExecuteInEditMode]
+    [ControllerToolRoles(ControllerRoleMask.Utility)]
     class MoveWorkspacesTool : MonoBehaviour, ITool, IStandardActionMap, IUsesRayOrigin, IUsesViewerBody,
         IUsesResetWorkspaces, IAllWorkspaces, IUsesViewerScale, IUsesRayVisibilitySettings
     {

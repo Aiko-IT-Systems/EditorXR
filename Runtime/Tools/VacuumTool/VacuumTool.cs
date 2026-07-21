@@ -10,6 +10,7 @@ using UnityEngine.InputNew;
 
 namespace Unity.EditorXR.Tools
 {
+    [ControllerToolRoles(ControllerRoleMask.Utility)]
     sealed class VacuumTool : MonoBehaviour, ITool, ICustomActionMap, IUsesRayOrigin, IUsesViewerScale,
         IUsesRequestFeedback, IUsesNode
     {

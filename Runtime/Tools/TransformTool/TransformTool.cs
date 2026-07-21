@@ -22,10 +22,12 @@ enum PivotRotation
 
 namespace Unity.EditorXR.Tools
 {
+    [ControllerToolRoles(ControllerRoleMask.Authoring, ControllerRoleMask.Utility)]
     sealed class TransformTool : MonoBehaviour, ITool, ITransformer, ISelectionChanged, IActions, IUsesDirectSelection,
         IGrabObjects, IUsesSelectObject, IManipulatorController, IUsesSnapping, IUsesSetHighlight, ILinkedObject, IRayToNode,
         IUsesControlHaptics, IUsesRayOrigin, IUsesNode, ICustomActionMap, ITwoHandedScaler, IUsesIsMainMenuVisible,
-        IUsesGetRayVisibility, IUsesRayVisibilitySettings, IUsesRequestFeedback, IUsesFunctionalityInjection
+        IUsesGetRayVisibility, IUsesRayVisibilitySettings, IUsesRequestFeedback, IUsesFunctionalityInjection,
+        IControllerRoleAware
     {
         enum TwoHandedManipulateMode
         {
@@ -409,6 +411,8 @@ namespace Unity.EditorXR.Tools
 
         public Transform rayOrigin { private get; set; }
         public Node node { private get; set; }
+        public ControllerRole controllerRole { get; set; }
+        public bool isCompanion { get; set; }
 
         public ActionMap actionMap { get { return m_ActionMap; } }
         public bool ignoreActionMapInputLocking { get { return false; } }
@@ -531,6 +535,10 @@ namespace Unity.EditorXR.Tools
 
                     // Check if the other hand is already grabbing for two-handed scale
                     var otherData = grabbingNode == Node.LeftHand ? m_RightGrabData : m_LeftGrabData;
+
+                    // The Utility companion may join an Authoring-hand grab, but cannot initiate a standalone edit.
+                    if (transformTool.isCompanion && otherData == null)
+                        continue;
 
                     if (otherData != null && !otherData.grabbedTransforms.Contains(directHoveredObject.transform))
                         otherData = null;

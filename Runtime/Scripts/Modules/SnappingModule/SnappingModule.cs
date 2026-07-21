@@ -188,6 +188,12 @@ namespace Unity.EditorXR.Modules
             [SerializeField]
             bool m_DirectSnappingEnabled = true;
 
+            [SerializeField]
+            bool m_ScaleSnappingEnabled;
+
+            [SerializeField]
+            float m_ScaleSnapIncrement = 0.1f;
+
             public bool disableAll
             {
                 get { return m_DisableAll; }
@@ -234,6 +240,18 @@ namespace Unity.EditorXR.Modules
             {
                 get { return m_DirectSnappingEnabled; }
                 set { m_DirectSnappingEnabled = value; }
+            }
+
+            public bool scaleSnappingEnabled
+            {
+                get { return m_ScaleSnappingEnabled; }
+                set { m_ScaleSnappingEnabled = value; }
+            }
+
+            public float scaleSnapIncrement
+            {
+                get { return m_ScaleSnapIncrement; }
+                set { m_ScaleSnapIncrement = value; }
             }
         }
 
@@ -369,6 +387,35 @@ namespace Unity.EditorXR.Modules
                 if (m_SnappingModuleSettingsUI)
                     m_SnappingModuleSettingsUI.directSnappingEnabled.isOn = value;
             }
+        }
+
+        public bool scaleSnappingEnabled
+        {
+            get { return !m_Preferences.disableAll && m_Preferences.scaleSnappingEnabled; }
+            set { m_Preferences.scaleSnappingEnabled = value; }
+        }
+
+        public float scaleSnapIncrement
+        {
+            get { return Mathf.Max(0.001f, m_Preferences.scaleSnapIncrement); }
+            set
+            {
+                if (float.IsNaN(value) || float.IsInfinity(value))
+                    return;
+
+                m_Preferences.scaleSnapIncrement = Mathf.Max(0.001f, value);
+            }
+        }
+
+        public bool TrySnapScaleDimension(float dimension, out float snappedDimension)
+        {
+            snappedDimension = dimension;
+            if (!scaleSnappingEnabled || float.IsNaN(dimension) || float.IsInfinity(dimension))
+                return false;
+
+            var increment = scaleSnapIncrement;
+            snappedDimension = Mathf.Max(0.001f, Mathf.Round(dimension / increment) * increment);
+            return true;
         }
 
         public Transform rayOrigin { get { return null; } }

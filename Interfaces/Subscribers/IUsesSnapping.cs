@@ -19,6 +19,41 @@ namespace Unity.EditorXR.Interfaces
     /// </summary>
     public static class UsesSnappingMethods
     {
+        public static bool GetScaleSnappingEnabled(this IUsesSnapping user)
+        {
+#if FI_AUTOFILL
+            return false;
+#else
+            return user.provider.scaleSnappingEnabled;
+#endif
+        }
+
+        public static void SetScaleSnappingEnabled(this IUsesSnapping user, bool enabled)
+        {
+#if !FI_AUTOFILL
+            user.provider.scaleSnappingEnabled = enabled;
+#endif
+        }
+
+        public static float GetScaleSnapIncrement(this IUsesSnapping user)
+        {
+#if FI_AUTOFILL
+            return 0.1f;
+#else
+            return user.provider.scaleSnapIncrement;
+#endif
+        }
+
+        public static bool TrySnapScaleDimension(this IUsesSnapping user, float dimension, out float snappedDimension)
+        {
+#if FI_AUTOFILL
+            snappedDimension = dimension;
+            return false;
+#else
+            return user.provider.TrySnapScaleDimension(dimension, out snappedDimension);
+#endif
+        }
+
         /// <summary>
         /// Perform manipulator snapping: Translate a position vector using deltas while also respecting snapping
         /// </summary>

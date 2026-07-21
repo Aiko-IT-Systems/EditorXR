@@ -214,6 +214,15 @@ namespace Unity.EditorXR.Core
                 EditorXR.includeInBuilds = EditorGUILayout.Toggle(new GUIContent(title, tooltip), EditorXR.includeInBuilds);
             }
 
+            // Controller roles
+            {
+                const string title = "Authoring Hand";
+                const string tooltip = "Choose which controller owns scene selection, transforms, creation, and asset placement.";
+                var selected = EditorGUILayout.Popup(new GUIContent(title, tooltip), EditorXR.authoringHandLeft ? 0 : 1,
+                    new[] { "Left", "Right" });
+                EditorXR.authoringHandLeft = selected == 0;
+            }
+
             if (GUILayout.Button("Reset to Defaults", GUILayout.Width(140)))
                 EditorXR.ResetPreferences();
 

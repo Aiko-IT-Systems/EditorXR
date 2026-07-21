@@ -22,6 +22,16 @@ namespace Unity.EditorXR.Modules
 
         public List<SpatialMenu.SpatialMenuData> spatialMenuData { get { return m_SpatialMenuData; } }
 
+        internal bool ExecuteAction<T>() where T : class, IAction
+        {
+            var action = m_Actions.OfType<T>().FirstOrDefault();
+            if (action == null)
+                return false;
+
+            action.ExecuteAction();
+            return true;
+        }
+
         public int connectInterfaceOrder { get { return 0; } }
 
 #if !FI_AUTOFILL

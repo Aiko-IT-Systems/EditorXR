@@ -1,8 +1,10 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using Unity.EditorXR.Core;
 using Unity.EditorXR.Interfaces;
+using Unity.EditorXR.Modules;
 using Unity.EditorXR.Proxies;
 using Unity.EditorXR.UI;
 using Unity.EditorXR.Utilities;
@@ -14,9 +16,12 @@ using UnityEngine.UI;
 
 namespace Unity.EditorXR.Tools
 {
+    [ControllerToolRoles(ControllerRoleMask.Utility, ControllerRoleMask.Authoring)]
     sealed class LocomotionTool : MonoBehaviour, ITool, ILocomotor, IUsesRayOrigin, IUsesRayVisibilitySettings,
         ICustomActionMap, ILinkedObject, IUsesViewerScale, ISettingsMenuItemProvider, ISerializePreferences,
-        IUsesDeviceType, IUsesGetVRPlayerObjects, IUsesBlockUIInteraction, IUsesRequestFeedback, IUsesNode, IUsesFunctionalityInjection
+        IUsesDeviceType, IUsesGetVRPlayerObjects, IUsesBlockUIInteraction, IUsesRequestFeedback, IUsesNode,
+        IUsesFunctionalityInjection, IControllerRoleAware, IUsesIsHoveringOverUI, IUsesGetManipulatorDragState,
+        IUsesSnapping
     {
         [Serializable]
         class Preferences
@@ -42,6 +47,10 @@ namespace Unity.EditorXR.Tools
         const float k_MaxScale = 1000f;
 
         const float k_RingDirectionSmoothing = 0.5f;
+        const float k_StickMoveSpeed = 4f;
+        const float k_DeleteHoldDuration = 0.45f;
+        const float k_SnapTurnAngle = 15f;
+        const float k_StickDeadZone = 0.2f;
         const float k_MouseMovementMultiplier = 0.01f;
         const float k_MouseScrollMultiplier = 0.01f;
         const float k_MouseRotationMultiplier = 0.05f;
@@ -112,6 +121,9 @@ namespace Unity.EditorXR.Tools
         bool m_BlockValueChangedListener;
 
         bool m_MouseWasHeld;
+        bool m_SnapTurnReady = true;
+        bool m_DeleteTriggered;
+        float m_DeletePressedTime;
         Vector3 m_RingDirection;
         MouseLocomotionRing m_MouseLocomotionRing;
 
@@ -129,6 +141,8 @@ namespace Unity.EditorXR.Tools
         public Transform cameraRig { private get; set; }
         public List<ILinkedObject> linkedObjects { private get; set; }
         public Node node { private get; set; }
+        public ControllerRole controllerRole { get; set; }
+        public bool isCompanion { get; set; }
 
         public GameObject settingsMenuItemPrefab
         {
@@ -190,6 +204,9 @@ namespace Unity.EditorXR.Tools
         IProvidesRayVisibilitySettings IFunctionalitySubscriber<IProvidesRayVisibilitySettings>.provider { get; set; }
         IProvidesGetVRPlayerObjects IFunctionalitySubscriber<IProvidesGetVRPlayerObjects>.provider { get; set; }
         IProvidesBlockUIInteraction IFunctionalitySubscriber<IProvidesBlockUIInteraction>.provider { get; set; }
+        IProvidesIsHoveringOverUI IFunctionalitySubscriber<IProvidesIsHoveringOverUI>.provider { get; set; }
+        IProvidesGetManipulatorDragState IFunctionalitySubscriber<IProvidesGetManipulatorDragState>.provider { get; set; }
+        IProvidesSnapping IFunctionalitySubscriber<IProvidesSnapping>.provider { get; set; }
 #endif
 
         void Start()
@@ -269,24 +286,148 @@ namespace Unity.EditorXR.Tools
                 return;
             }
 
-            if (DoRotating(consumeControl))
+            if (DoRoleShortcuts(consumeControl))
                 return;
 
-            if (m_Preferences.blinkMode)
-            {
-                if (DoBlink(consumeControl))
-                    return;
-            }
-            else
-            {
-                if (DoFlying(consumeControl))
-                    return;
-            }
+            if (DoUtilityStickLocomotion(consumeControl))
+                return;
+
+            if (DoRotating(consumeControl))
+                return;
 
             if (DoCrawl(consumeControl))
                 return;
 
             this.SetUIBlockedForRayOrigin(rayOrigin, false);
+        }
+
+        LocomotionTool GetRoleTool(ControllerRole role)
+        {
+            return linkedObjects.Cast<LocomotionTool>().FirstOrDefault(tool => tool.controllerRole == role);
+        }
+
+        bool DoRoleShortcuts(ConsumeControlDelegate consumeControl)
+        {
+            if (!this.IsSharedUpdater(this))
+                return false;
+
+            var utilityTool = GetRoleTool(ControllerRole.Utility);
+            var authoringTool = GetRoleTool(ControllerRole.Authoring);
+            if (utilityTool == null || authoringTool == null || utilityTool.m_LocomotionInput == null
+                || authoringTool.m_LocomotionInput == null)
+                return false;
+
+            var utility = utilityTool.m_LocomotionInput;
+            var authoring = authoringTool.m_LocomotionInput;
+            var commandHeld = utility.crawl.isHeld;
+            var actions = ModuleLoaderCore.instance.GetModule<ActionsModule>();
+            var used = false;
+
+            if (commandHeld)
+            {
+                if (authoring.reverse.wasJustPressed)
+                    used = actions != null && actions.ExecuteAction<Copy>();
+                else if (authoring.forward.wasJustPressed)
+                    used = actions != null && actions.ExecuteAction<Paste>();
+                else if (utility.reverse.wasJustPressed)
+                    used = actions != null && actions.ExecuteAction<SelectParent>();
+                else if (utility.forward.wasJustPressed)
+                {
+                    this.SetScaleSnappingEnabled(!this.GetScaleSnappingEnabled());
+                    used = true;
+                }
+
+                if (used)
+                {
+                    consumeControl(utility.crawl);
+                    consumeControl(authoring.reverse);
+                    consumeControl(authoring.forward);
+                    consumeControl(utility.reverse);
+                    consumeControl(utility.forward);
+                    return true;
+                }
+            }
+
+            if (utility.reverse.wasJustPressed)
+            {
+                used = actions != null && actions.ExecuteAction<Unity.EditorXR.Undo>();
+                if (used)
+                    consumeControl(utility.reverse);
+            }
+            else if (utility.forward.wasJustPressed)
+            {
+                used = actions != null && actions.ExecuteAction<Redo>();
+                if (used)
+                    consumeControl(utility.forward);
+            }
+            else if (authoring.reverse.wasJustPressed)
+            {
+                used = actions != null && actions.ExecuteAction<Duplicate>();
+                if (used)
+                    consumeControl(authoring.reverse);
+            }
+
+            var delete = authoring.forward;
+            var canDelete = !this.GetManipulatorDragState() && !this.IsHoveringOverUI(authoringTool.rayOrigin);
+            if (delete.wasJustPressed)
+            {
+                m_DeletePressedTime = Time.unscaledTime;
+                m_DeleteTriggered = false;
+            }
+
+            if (delete.isHeld && canDelete && !m_DeleteTriggered
+                && Time.unscaledTime - m_DeletePressedTime >= k_DeleteHoldDuration)
+            {
+                m_DeleteTriggered = actions != null && actions.ExecuteAction<Unity.EditorXR.Delete>();
+                consumeControl(delete);
+                return m_DeleteTriggered;
+            }
+
+            if (delete.wasJustReleased)
+                m_DeleteTriggered = false;
+
+            return used;
+        }
+
+        bool DoUtilityStickLocomotion(ConsumeControlDelegate consumeControl)
+        {
+            if (isCompanion || this.IsHoveringOverUI(rayOrigin))
+                return false;
+
+            var x = m_LocomotionInput.horizontal.value;
+            var y = m_LocomotionInput.vertical.value;
+            var stick = new Vector2(x, y);
+            if (stick.magnitude < k_StickDeadZone)
+            {
+                m_SnapTurnReady = true;
+                return false;
+            }
+
+            var modifier = m_LocomotionInput.speed;
+            var modifierHeld = modifier.value > 0.5f;
+            var camera = CameraUtils.GetMainCamera().transform;
+            if (modifierHeld)
+            {
+                cameraRig.position += Vector3.up * y * k_StickMoveSpeed * this.GetViewerScale() * Time.unscaledDeltaTime;
+                if (Mathf.Abs(x) > 0.7f && m_SnapTurnReady)
+                {
+                    cameraRig.RotateAround(camera.position, Vector3.up, Mathf.Sign(x) * k_SnapTurnAngle);
+                    m_SnapTurnReady = false;
+                }
+
+                consumeControl(modifier);
+            }
+            else
+            {
+                var forward = Vector3.ProjectOnPlane(camera.forward, Vector3.up).normalized;
+                var right = Vector3.Cross(Vector3.up, forward);
+                cameraRig.position += (forward * y + right * x) * k_StickMoveSpeed * this.GetViewerScale()
+                    * Time.unscaledDeltaTime;
+            }
+
+            consumeControl(m_LocomotionInput.horizontal);
+            consumeControl(m_LocomotionInput.vertical);
+            return true;
         }
 
         // HACK: Because we don't get mouse input through action maps, just use Update

@@ -12,6 +12,11 @@ namespace Unity.EditorXR.Interfaces
     /// </summary>
     public interface IProvidesSnapping : IFunctionalityProvider
     {
+        bool scaleSnappingEnabled { get; set; }
+        float scaleSnapIncrement { get; set; }
+
+        bool TrySnapScaleDimension(float dimension, out float snappedDimension);
+
         /// <summary>
         /// Perform manipulator snapping: Translate a position vector using deltas while also respecting snapping
         /// </summary>

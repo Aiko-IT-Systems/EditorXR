@@ -16,6 +16,7 @@ using UnityEngine.UI;
 namespace Unity.EditorXR.Tools
 {
     [SpatialMenuItem("Selection", "Tools", "Select & manipulate objects in the scene")]
+    [ControllerToolRoles(ControllerRoleMask.Authoring)]
     sealed class SelectionTool : MonoBehaviour, ITool, IUsesRayOrigin, IUsesRaycastResults, ICustomActionMap,
         IUsesSetHighlight, IUsesSelectObject, IUsesSetManipulatorsVisible, IUsesIsHoveringOverUI, IUsesDirectSelection,
         ILinkedObject, IUsesCanGrabObject, IUsesGetManipulatorDragState, IUsesNode, IUsesGetRayVisibility,

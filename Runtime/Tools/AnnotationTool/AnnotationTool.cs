@@ -19,6 +19,7 @@ namespace Unity.EditorXR.Tools
 {
     [MainMenuItem("Annotation", "Create", "Draw in 3D")]
     [SpatialMenuItem("Annotation", "Tools", "Draw in 3D")]
+    [ControllerToolRoles(ControllerRoleMask.Authoring)]
     class AnnotationTool : MonoBehaviour, ITool, ICustomActionMap, IUsesRayOrigin, IUsesRayVisibilitySettings,
         IInstantiateUI, IUsesInstantiateMenuUI, IUsesMenuOrigins, IUsesViewerScale, IUsesSpatialHash,
         IUsesIsHoveringOverUI, IMultiDeviceTool, IUsesDeviceType, ISerializePreferences, ILinkedObject,

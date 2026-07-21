@@ -195,7 +195,14 @@ namespace Unity.EditorXR.Core
             var type = linkedObject.GetType();
             List<ILinkedObject> list;
             if (m_LinkedObjects.TryGetValue(type, out list))
-                return m_LinkedObjects[type].IndexOf(linkedObject) == 0;
+            {
+                var primary = list.FirstOrDefault(item =>
+                {
+                    var roleAware = item as IControllerRoleAware;
+                    return roleAware == null || !roleAware.isCompanion;
+                });
+                return primary == linkedObject;
+            }
 
             return false;
         }
@@ -207,6 +214,22 @@ namespace Unity.EditorXR.Core
                 return false;
 
             return defaultTools.Contains(type);
+        }
+
+        static ControllerRole GetControllerRole(Node node)
+        {
+            var isLeft = node == Node.LeftHand;
+            return isLeft == EditorXR.authoringHandLeft ? ControllerRole.Authoring : ControllerRole.Utility;
+        }
+
+        static bool ToolSupportsRole(Type toolType, ControllerRole role, out bool companion)
+        {
+            ControllerRoleMask supportedRoles;
+            ControllerRoleMask companionRoles;
+            ControllerRoleUtility.GetToolRoles(toolType, out supportedRoles, out companionRoles);
+            var roleMask = ControllerRoleUtility.ToMask(role);
+            companion = (companionRoles & roleMask) != 0;
+            return (supportedRoles & roleMask) != 0 || companion;
         }
 
         internal void SpawnDefaultTools(IProxy proxy)
@@ -233,6 +256,10 @@ namespace Unity.EditorXR.Core
                 var rayOrigin = device.rayOrigin;
                 foreach (var toolType in defaultTools)
                 {
+                    bool companion;
+                    if (!ToolSupportsRole(toolType, GetControllerRole(device.node), out companion))
+                        continue;
+
                     HashSet<InputDevice> devices;
                     var toolData = SpawnTool(toolType, out devices, inputDevice, rayOrigin, deviceInputModule);
                     AddToolToDeviceData(toolData, devices);
@@ -350,6 +377,18 @@ namespace Unity.EditorXR.Core
             if (usedDevices.Count == 0)
                 usedDevices.Add(device);
 
+            var deviceDataForRay = this.deviceData.FirstOrDefault(data => data.rayOrigin == rayOrigin);
+            var roleAware = tool as IControllerRoleAware;
+            if (roleAware != null && deviceDataForRay != null)
+            {
+                var role = GetControllerRole(deviceDataForRay.node);
+                bool companion;
+                ToolSupportsRole(toolType, role, out companion);
+                roleAware.controllerRole = role;
+                roleAware.isCompanion = companion;
+            }
+
+            // Role state must be available before linked interfaces can choose their primary updater.
             this.InjectFunctionalitySingle(tool);
             this.ConnectInterfaces(tool, rayOrigin);
 
@@ -385,6 +424,15 @@ namespace Unity.EditorXR.Core
             {
                 if (device.rayOrigin == rayOrigin)
                 {
+                    bool roleCompanion;
+                    if (!ToolSupportsRole(toolType, GetControllerRole(device.node), out roleCompanion)
+                        && !typeof(IMultiDeviceTool).IsAssignableFrom(toolType))
+                    {
+                        Debug.LogWarningFormat("{0} is not available on the {1} controller", toolType.Name,
+                            GetControllerRole(device.node));
+                        return;
+                    }
+
                     var spawnTool = true;
                     var currentTool = device.currentTool;
                     var currentToolType = currentTool.GetType();

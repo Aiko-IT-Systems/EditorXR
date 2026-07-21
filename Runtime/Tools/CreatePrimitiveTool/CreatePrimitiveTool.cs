@@ -13,6 +13,7 @@ namespace Unity.EditorXR.Tools
 {
     [MainMenuItem("Primitive", "Create", "Create primitives in the scene")]
     [SpatialMenuItem("Primitives", "Tools", "Create primitives in the scene")]
+    [ControllerToolRoles(ControllerRoleMask.Authoring)]
     sealed class CreatePrimitiveTool : MonoBehaviour, ITool, IStandardActionMap, IUsesConnectInterfaces, IUsesInstantiateMenuUI,
         IUsesRayOrigin, IUsesSpatialHash, IUsesViewerScale, IUsesSelectTool, IUsesIsHoveringOverUI, IUsesIsMainMenuVisible,
         IUsesRayVisibilitySettings, IMenuIcon, IUsesRequestFeedback, IUsesNode

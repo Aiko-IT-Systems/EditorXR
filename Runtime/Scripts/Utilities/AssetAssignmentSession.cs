@@ -1,4 +1,5 @@
 using Unity.EditorXR.Core;
+using Unity.EditorXR.Interfaces;
 using UnityEngine;
 
 namespace Unity.EditorXR.Utilities

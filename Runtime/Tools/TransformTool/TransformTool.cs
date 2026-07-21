@@ -50,6 +50,9 @@ namespace Unity.EditorXR.Tools
             Quaternion m_UpRotationOffset;
             Quaternion m_ForwardRotationOffset;
             float m_StartDistance;
+            float m_FilteredDistance;
+            Vector3 m_FilteredMidPoint;
+            Quaternion m_FilteredRotation;
             bool m_UseUp;
 
             readonly Vector3 m_GrabOffset;
@@ -176,8 +179,13 @@ namespace Unity.EditorXR.Tools
                 var thisPosition = pivotPoint;
                 var otherPosition = otherGrab.pivotPoint;
                 var distance = Vector3.Distance(thisPosition, otherPosition);
-                var scaleFactor = distance / m_StartDistance;
-                if (scaleFactor > 0 && scaleFactor < Mathf.Infinity)
+                if (m_StartDistance < 0.05f || !IsFinite(distance))
+                    return;
+
+                var filter = ScaleTransformUtility.ExponentialLerpFactor(Time.unscaledDeltaTime, 0.03f);
+                m_FilteredDistance = Mathf.Lerp(m_FilteredDistance, distance, filter);
+                var scaleFactor = m_FilteredDistance / m_StartDistance;
+                if (scaleFactor > 0 && IsFinite(scaleFactor))
                 {
                     var rayToRay = otherPosition - thisPosition;
                     var midPoint = thisPosition + rayToRay * 0.5f;
@@ -186,6 +194,10 @@ namespace Unity.EditorXR.Tools
 
                     var grabRotation = Quaternion.LookRotation(rayToRay, m_UseUp ? upVector : forward);
                     var rotationOffset = grabRotation * (m_UseUp ? m_UpRotationOffset : m_ForwardRotationOffset);
+                    m_FilteredMidPoint = Vector3.Lerp(m_FilteredMidPoint, midPoint, filter);
+                    m_FilteredRotation = Quaternion.Slerp(m_FilteredRotation, rotationOffset, filter);
+                    midPoint = m_FilteredMidPoint;
+                    rotationOffset = m_FilteredRotation;
 
                     for (var i = 0; i < grabbedTransforms.Length; i++)
                     {
@@ -196,7 +208,7 @@ namespace Unity.EditorXR.Tools
                             var targetPosition = midPoint + rotationOffset * m_PositionOffsets[i];
                             var currentPosition = grabbedObject.position;
                             if (currentPosition != targetPosition)
-                                grabbedObject.position = Vector3.Lerp(currentPosition, targetPosition, k_DirectLazyFollowTranslate);
+                                grabbedObject.position = targetPosition;
 
                             var targetScale = m_InitialScales[i];
                             if (grabbedObject.localScale != targetScale)
@@ -211,7 +223,7 @@ namespace Unity.EditorXR.Tools
                             var targetPosition = midPoint + offset;
                             var currentPosition = grabbedObject.position;
                             if (currentPosition != targetPosition)
-                                grabbedObject.position = Vector3.Lerp(currentPosition, targetPosition, k_DirectLazyFollowTranslate);
+                                grabbedObject.position = targetPosition;
 
                             var targetScale = m_InitialScales[i] * scaleFactor;
                             if (grabbedObject.localScale != targetScale)
@@ -219,9 +231,9 @@ namespace Unity.EditorXR.Tools
                         }
 
                         if (twoHandedManipulateMode == TwoHandedManipulateMode.ScaleOnly)
-                            grabbedObject.rotation = Quaternion.Lerp(grabbedObject.rotation, m_RotationOffsets[i], k_DirectLazyFollowRotate);
+                            grabbedObject.rotation = m_RotationOffsets[i];
                         else
-                            grabbedObject.rotation = Quaternion.Lerp(grabbedObject.rotation, rotationOffset * m_RotationOffsets[i], k_DirectLazyFollowRotate);
+                            grabbedObject.rotation = rotationOffset * m_RotationOffsets[i];
                     }
                 }
             }
@@ -235,19 +247,24 @@ namespace Unity.EditorXR.Tools
                 }
             }
 
-            public void StartScaling(GrabData otherGrab)
+            public bool StartScaling(GrabData otherGrab)
             {
                 var thisPosition = pivotPoint;
                 var otherPosition = otherGrab.pivotPoint;
                 var rayToRay = otherPosition - thisPosition;
                 m_StartMidPoint = thisPosition + rayToRay * 0.5f;
                 m_StartDistance = Vector3.Distance(thisPosition, otherPosition);
+                if (m_StartDistance < 0.05f || !IsFinite(m_StartDistance))
+                    return false;
 
                 m_UseUp = Vector3.Dot(rayOrigin.forward, otherGrab.rayOrigin.forward) < -0.5f;
                 var forward = Vector3.Slerp(rayOrigin.forward, otherGrab.rayOrigin.forward, 0.5f);
                 var upVector = Vector3.Slerp(rayOrigin.up, otherGrab.rayOrigin.up, 0.5f);
                 m_UpRotationOffset = Quaternion.Inverse(Quaternion.LookRotation(rayToRay, upVector));
                 m_ForwardRotationOffset = Quaternion.Inverse(Quaternion.LookRotation(rayToRay, forward));
+                m_FilteredDistance = m_StartDistance;
+                m_FilteredMidPoint = m_StartMidPoint;
+                m_FilteredRotation = Quaternion.identity;
 
                 for (var i = 0; i < grabbedTransforms.Length; i++)
                 {
@@ -260,6 +277,12 @@ namespace Unity.EditorXR.Tools
                 otherGrab.m_OriginalPositions = m_OriginalPositions;
                 otherGrab.m_OriginalRotations = m_OriginalRotations;
                 otherGrab.m_OriginalScales = m_OriginalScales;
+                return true;
+            }
+
+            static bool IsFinite(float value)
+            {
+                return !float.IsNaN(value) && !float.IsInfinity(value);
             }
 
             public void Cancel()
@@ -291,6 +314,18 @@ namespace Unity.EditorXR.Tools
                 if (execute != null)
                     execute();
             }
+        }
+
+        class ScaleGesture
+        {
+            public Transform[] roots;
+            public ScaleTransformState[] states;
+            public OrientedSelectionBounds bounds;
+            public ScaleHandleKind kind;
+            public Vector3 direction;
+            public Transform rayOrigin;
+            public float baselineDistance;
+            public bool symmetric;
         }
 
         const float k_LazyFollowTranslate = 8f;
@@ -359,6 +394,7 @@ namespace Unity.EditorXR.Tools
         Node m_ScaleFirstNode;
         bool m_Scaling;
         bool m_CurrentlySnapping;
+        ScaleGesture m_ScaleGesture;
 
         TransformInput m_Input;
 
@@ -448,7 +484,10 @@ namespace Unity.EditorXR.Tools
                 m_StandardManipulator = CreateManipulator(m_StandardManipulatorPrefab);
 
             if (m_ScaleManipulatorPrefab != null)
+            {
                 m_ScaleManipulator = CreateManipulator(m_ScaleManipulatorPrefab);
+                ((ScaleManipulator)m_ScaleManipulator).scaleDrag = OnScaleDrag;
+            }
 
             m_CurrentManipulator = m_StandardManipulator;
 
@@ -560,13 +599,18 @@ namespace Unity.EditorXR.Tools
 
                         consumeControl(transformInput.select);
 
-                        var grabbedObjects = new HashSet<Transform> { directHoveredObject.transform };
-                        grabbedObjects.UnionWith(Selection.transforms);
+                        Transform[] grabbedRoots;
+                        if (Selection.transforms.Contains(directHoveredObject.transform))
+                            grabbedRoots = ScaleTransformUtility.GetSelectionRoots(Selection.transforms);
+                        else
+                            grabbedRoots = new[] { directHoveredObject.transform };
+
+                        var grabbedObjects = new HashSet<Transform>(grabbedRoots);
 
                         if (objectsGrabbed != null && !m_Scaling)
                             objectsGrabbed(directRayOrigin, grabbedObjects);
 
-                        var grabData = new GrabData(directRayOrigin, transformInput, grabbedObjects.ToArray(), directSelectionData.contactPoint);
+                        var grabData = new GrabData(directRayOrigin, transformInput, grabbedRoots, directSelectionData.contactPoint);
                         if (grabbingNode == Node.LeftHand)
                             m_LeftGrabData = grabData;
                         else
@@ -576,9 +620,11 @@ namespace Unity.EditorXR.Tools
                         if (otherData != null)
                         {
                             m_ScaleFirstNode = grabbingNode == Node.LeftHand ? Node.RightHand : Node.LeftHand;
-                            otherData.StartScaling(grabData);
-                            ShowScaleOptionsFeedback(otherData.twoHandedManipulateMode);
-                            m_Scaling = true;
+                            if (otherData.StartScaling(grabData))
+                            {
+                                ShowScaleOptionsFeedback(otherData.twoHandedManipulateMode);
+                                m_Scaling = true;
+                            }
                         }
 
                         // A direct selection has been made. Hide the manipulator until the selection changes
@@ -686,11 +732,19 @@ namespace Unity.EditorXR.Tools
                 {
                     var rightRayOrigin = m_RightGrabData.rayOrigin;
                     var leftRayOrigin = m_LeftGrabData.rayOrigin;
-                    var leftCancel = leftInput.cancel;
-                    var rightCancel = rightInput.cancel;
+                    var authoringTool = linkedObjects.Cast<TransformTool>()
+                        .FirstOrDefault(tool => tool.controllerRole == ControllerRole.Authoring);
+                    var utilityTool = linkedObjects.Cast<TransformTool>()
+                        .FirstOrDefault(tool => tool.controllerRole == ControllerRole.Utility);
+                    if (authoringTool == null || utilityTool == null || authoringTool.m_Input == null
+                        || utilityTool.m_Input == null)
+                        return;
+
+                    var cancel = authoringTool.m_Input.cancel;
+                    var toggleMode = utilityTool.m_Input.cancel;
 
                     var scaleGrabData = m_ScaleFirstNode == Node.LeftHand ? m_LeftGrabData : m_RightGrabData;
-                    if (leftCancel.wasJustPressed)
+                    if (toggleMode.wasJustPressed)
                     {
                         if (scaleGrabData.twoHandedManipulateMode == TwoHandedManipulateMode.ScaleOnly)
                             scaleGrabData.twoHandedManipulateMode = TwoHandedManipulateMode.RotateAndScale;
@@ -700,7 +754,7 @@ namespace Unity.EditorXR.Tools
                         ShowScaleOptionsFeedback(scaleGrabData.twoHandedManipulateMode);
                     }
 
-                    if (rightCancel.wasJustPressed)
+                    if (cancel.wasJustPressed)
                     {
                         HideScaleOptionFeedback();
                         m_Scaling = false;
@@ -775,6 +829,10 @@ namespace Unity.EditorXR.Tools
             {
                 if (!m_CurrentManipulator.dragging)
                     UpdateCurrentManipulator();
+
+                // Bounds scaling applies exact transforms directly from its captured baseline.
+                if (m_ScaleGesture != null)
+                    return;
 
                 var deltaTime = Time.deltaTime;
                 var manipulatorTransform = manipulatorGameObject.transform;
@@ -922,6 +980,156 @@ namespace Unity.EditorXR.Tools
             m_TargetScale += delta;
         }
 
+        void OnScaleDrag(ScaleDragData data)
+        {
+            switch (data.phase)
+            {
+                case ScaleDragPhase.Started:
+                    BeginScaleDrag(data);
+                    break;
+                case ScaleDragPhase.Updated:
+                    UpdateScaleDrag(data);
+                    break;
+                case ScaleDragPhase.Ended:
+                    m_ScaleGesture = null;
+                    UpdateCurrentManipulator();
+                    break;
+            }
+        }
+
+        void BeginScaleDrag(ScaleDragData data)
+        {
+            var roots = ScaleTransformUtility.GetSelectionRoots(Selection.transforms);
+            if (roots.Length == 0)
+                return;
+
+            var frameRotation = GetScaleFrameRotation(roots);
+            var bounds = ScaleTransformUtility.CalculateBounds(roots, frameRotation);
+            if (HasMixedRotations(roots))
+                Debug.LogWarning("EditorXR scale: mixed object rotations use exact positions and approximate local scales.");
+
+            m_ScaleGesture = new ScaleGesture
+            {
+                roots = roots,
+                states = ScaleTransformUtility.CaptureStates(roots),
+                bounds = bounds,
+                kind = data.kind,
+                direction = data.direction,
+                rayOrigin = data.rayOrigin,
+                baselineDistance = data.totalDistance,
+                symmetric = IsScaleModifierHeld(data.rayOrigin),
+            };
+
+#if UNITY_EDITOR
+            UnityEditor.Undo.RecordObjects(roots, "Scale Selection");
+#endif
+        }
+
+        void RebaseScaleDrag(ScaleDragData data, bool symmetric)
+        {
+            var gesture = m_ScaleGesture;
+            gesture.states = ScaleTransformUtility.CaptureStates(gesture.roots);
+            gesture.bounds = ScaleTransformUtility.CalculateBounds(gesture.roots, gesture.bounds.rotation);
+            gesture.baselineDistance = data.totalDistance;
+            gesture.symmetric = symmetric;
+        }
+
+        void UpdateScaleDrag(ScaleDragData data)
+        {
+            var gesture = m_ScaleGesture;
+            if (gesture == null)
+                return;
+
+            var symmetric = IsScaleModifierHeld(data.rayOrigin);
+            if (symmetric != gesture.symmetric)
+                RebaseScaleDrag(data, symmetric);
+
+            var distance = data.totalDistance - gesture.baselineDistance;
+            var size = gesture.bounds.size;
+            float factor;
+            Vector3 factors;
+            Vector3 anchor;
+            if (gesture.kind == ScaleHandleKind.Face)
+            {
+                var axisDimension = Mathf.Abs(gesture.direction.x) > 0.5f ? size.x
+                    : Mathf.Abs(gesture.direction.y) > 0.5f ? size.y : size.z;
+                factor = ScaleTransformUtility.FaceScaleFactor(axisDimension, distance, gesture.symmetric);
+                var targetDimension = axisDimension * factor;
+                float snappedDimension;
+                if (this.TrySnapScaleDimension(targetDimension, out snappedDimension))
+                    factor = snappedDimension / Mathf.Max(0.001f, axisDimension);
+
+                factors = ScaleTransformUtility.AxisFactors(gesture.direction, factor);
+                anchor = gesture.symmetric ? gesture.bounds.center
+                    : ScaleTransformUtility.OppositeAnchor(gesture.bounds, gesture.direction);
+            }
+            else
+            {
+                factor = ScaleTransformUtility.CornerScaleFactor(gesture.bounds.extents, distance, gesture.symmetric);
+                var longestDimension = ScaleTransformUtility.LongestDimension(size);
+                float snappedDimension;
+                if (this.TrySnapScaleDimension(longestDimension * factor, out snappedDimension))
+                    factor = snappedDimension / Mathf.Max(0.001f, longestDimension);
+
+                factors = Vector3.one * factor;
+                anchor = gesture.symmetric ? gesture.bounds.center
+                    : ScaleTransformUtility.OppositeAnchor(gesture.bounds, gesture.direction);
+            }
+
+            if (!IsFinite(factor))
+                return;
+
+            ScaleTransformUtility.ApplyScale(gesture.states, anchor, gesture.bounds.rotation, factors);
+            var inverseRotation = Quaternion.Inverse(gesture.bounds.rotation);
+            var centerOffset = inverseRotation * (gesture.bounds.center - anchor);
+            var scaledCenter = anchor + gesture.bounds.rotation * Vector3.Scale(centerOffset, factors);
+            m_ScaleManipulator.transform.position = scaledCenter;
+            m_TargetPosition = scaledCenter;
+            ((ScaleManipulator)m_ScaleManipulator).SetBounds(Vector3.Scale(gesture.bounds.extents, factors));
+            this.Pulse(this.RequestNodeFromRayOrigin(data.rayOrigin), m_DragPulse);
+        }
+
+        Quaternion GetScaleFrameRotation(Transform[] roots)
+        {
+            if (m_PivotRotation == PivotRotation.Global)
+                return Quaternion.identity;
+
+            var active = Selection.activeTransform;
+            return active ? active.rotation : roots[0].rotation;
+        }
+
+        bool IsScaleModifierHeld(Transform sourceRayOrigin)
+        {
+            foreach (var linkedObject in linkedObjects)
+            {
+                var tool = (TransformTool)linkedObject;
+                if (tool.rayOrigin == sourceRayOrigin && tool.m_Input != null)
+                    return tool.m_Input.suppressVertical.value > 0.5f;
+            }
+
+            return false;
+        }
+
+        static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+
+        static bool HasMixedRotations(Transform[] roots)
+        {
+            if (roots.Length < 2)
+                return false;
+
+            var rotation = roots[0].rotation;
+            for (var i = 1; i < roots.Length; ++i)
+            {
+                if (Quaternion.Angle(rotation, roots[i].rotation) > 0.1f)
+                    return true;
+            }
+
+            return false;
+        }
+
         static void OnDragStarted()
         {
 #if UNITY_EDITOR
@@ -967,9 +1175,21 @@ namespace Unity.EditorXR.Tools
             if (activeTransform == null)
                 activeTransform = selectionTransforms[0];
 
-            manipulatorTransform.position = m_PivotMode == PivotMode.Pivot ? activeTransform.position : m_SelectionBounds.center;
-            manipulatorTransform.rotation = m_PivotRotation == PivotRotation.Global && m_CurrentManipulator == m_StandardManipulator
-                ? Quaternion.identity : activeTransform.rotation;
+            if (m_CurrentManipulator == m_ScaleManipulator)
+            {
+                var roots = ScaleTransformUtility.GetSelectionRoots(selectionTransforms);
+                var rotation = GetScaleFrameRotation(roots);
+                var orientedBounds = ScaleTransformUtility.CalculateBounds(roots, rotation);
+                manipulatorTransform.position = orientedBounds.center;
+                manipulatorTransform.rotation = rotation;
+                ((ScaleManipulator)m_ScaleManipulator).SetBounds(orientedBounds.extents);
+            }
+            else
+            {
+                manipulatorTransform.position = m_PivotMode == PivotMode.Pivot ? activeTransform.position : m_SelectionBounds.center;
+                manipulatorTransform.rotation = m_PivotRotation == PivotRotation.Global
+                    ? Quaternion.identity : activeTransform.rotation;
+            }
             m_TargetPosition = manipulatorTransform.position;
             m_TargetRotation = manipulatorTransform.rotation;
             m_StartRotation = m_TargetRotation;
@@ -1095,17 +1315,25 @@ namespace Unity.EditorXR.Tools
         void ShowScaleOptionsFeedback(TwoHandedManipulateMode mode)
         {
             HideScaleOptionFeedback();
+            var authoringNode = GetNodeForRole(ControllerRole.Authoring);
+            var utilityNode = GetNodeForRole(ControllerRole.Utility);
             switch (mode)
             {
                 case TwoHandedManipulateMode.ScaleOnly:
-                    ShowFeedback(m_ScaleOptionFeedback, "Cancel", "Press to Rotate and Scale", Node.LeftHand);
-                    ShowFeedback(m_ScaleOptionFeedback, "Cancel", "Press to Cancel", Node.RightHand);
+                    ShowFeedback(m_ScaleOptionFeedback, "Cancel", "Press to Rotate and Scale", utilityNode);
+                    ShowFeedback(m_ScaleOptionFeedback, "Cancel", "Press to Cancel", authoringNode);
                     return;
                 case TwoHandedManipulateMode.RotateAndScale:
-                    ShowFeedback(m_ScaleOptionFeedback, "Cancel", "Press to Scale Only", Node.LeftHand);
-                    ShowFeedback(m_ScaleOptionFeedback, "Cancel", "Press to Cancel", Node.RightHand);
+                    ShowFeedback(m_ScaleOptionFeedback, "Cancel", "Press to Scale Only", utilityNode);
+                    ShowFeedback(m_ScaleOptionFeedback, "Cancel", "Press to Cancel", authoringNode);
                     return;
             }
+        }
+
+        Node GetNodeForRole(ControllerRole role)
+        {
+            var tool = linkedObjects.Cast<TransformTool>().FirstOrDefault(item => item.controllerRole == role);
+            return tool != null ? tool.node : node;
         }
 
         void HideFeedback(List<ProxyFeedbackRequest> requests)

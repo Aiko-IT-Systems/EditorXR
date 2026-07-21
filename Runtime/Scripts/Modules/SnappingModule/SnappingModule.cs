@@ -391,19 +391,24 @@ namespace Unity.EditorXR.Modules
 
         public bool scaleSnappingEnabled
         {
-            get { return !m_Preferences.disableAll && m_Preferences.scaleSnappingEnabled; }
-            set { m_Preferences.scaleSnappingEnabled = value; }
+            get { return !m_Preferences.disableAll && EditorXR.scaleSnappingEnabled; }
+            set
+            {
+                m_Preferences.scaleSnappingEnabled = value;
+                EditorXR.scaleSnappingEnabled = value;
+            }
         }
 
         public float scaleSnapIncrement
         {
-            get { return Mathf.Max(0.001f, m_Preferences.scaleSnapIncrement); }
+            get { return EditorXR.scaleSnapIncrement; }
             set
             {
                 if (float.IsNaN(value) || float.IsInfinity(value))
                     return;
 
                 m_Preferences.scaleSnapIncrement = Mathf.Max(0.001f, value);
+                EditorXR.scaleSnapIncrement = value;
             }
         }
 

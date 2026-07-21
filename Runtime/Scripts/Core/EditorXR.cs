@@ -52,6 +52,8 @@ namespace Unity.EditorXR.Core
         const string k_PreserveLayout = "EditorXR.PreserveLayout";
         const string k_IncludeInBuilds = "EditorXR.IncludeInBuilds";
         const string k_AuthoringHandLeft = "EditorXR.AuthoringHandLeft";
+        const string k_ScaleSnappingEnabled = "EditorXR.ScaleSnappingEnabled";
+        const string k_ScaleSnapIncrement = "EditorXR.ScaleSnapIncrement";
 
         static bool s_IsInitialized;
 
@@ -73,6 +75,22 @@ namespace Unity.EditorXR.Core
             set { EditorPrefs.SetBool(k_AuthoringHandLeft, value); }
         }
 
+        internal static bool scaleSnappingEnabled
+        {
+            get { return EditorPrefs.GetBool(k_ScaleSnappingEnabled, false); }
+            set { EditorPrefs.SetBool(k_ScaleSnappingEnabled, value); }
+        }
+
+        internal static float scaleSnapIncrement
+        {
+            get { return Mathf.Max(0.001f, EditorPrefs.GetFloat(k_ScaleSnapIncrement, 0.1f)); }
+            set
+            {
+                if (!float.IsNaN(value) && !float.IsInfinity(value))
+                    EditorPrefs.SetFloat(k_ScaleSnapIncrement, Mathf.Max(0.001f, value));
+            }
+        }
+
         internal static Type[] DefaultTools { get; set; }
         internal static Type DefaultMenu { get; set; }
         internal static Type DefaultAlternateMenu { get; set; }
@@ -89,6 +107,8 @@ namespace Unity.EditorXR.Core
             EditorPrefs.DeleteKey(k_PreserveLayout);
             EditorPrefs.DeleteKey(k_IncludeInBuilds);
             EditorPrefs.DeleteKey(k_AuthoringHandLeft);
+            EditorPrefs.DeleteKey(k_ScaleSnappingEnabled);
+            EditorPrefs.DeleteKey(k_ScaleSnapIncrement);
             EditorPrefs.DeleteKey(SerializedPreferencesModule.SerializedPreferencesKey);
             ModuleLoaderDebugSettings.instance.SetModuleHideFlags(k_DefaultHideFlags);
 #endif

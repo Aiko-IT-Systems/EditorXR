@@ -59,7 +59,7 @@ namespace Unity.EditorXR.Manipulators
         public event Action dragStarted;
         public event Action<Transform> dragEnded;
 
-        void Awake()
+        protected virtual void Awake()
         {
             m_ScaleBumps[typeof(LinearHandle)] = m_LinearHandleScaleBump;
             m_ScaleBumps[typeof(PlaneHandle)] = m_PlaneHandleScaleBump;

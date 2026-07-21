@@ -223,6 +223,9 @@ namespace Unity.EditorXR.Core
                 EditorXR.authoringHandLeft = selected == 0;
             }
 
+            EditorXR.scaleSnappingEnabled = EditorGUILayout.Toggle("Scale Snapping", EditorXR.scaleSnappingEnabled);
+            EditorXR.scaleSnapIncrement = EditorGUILayout.FloatField("Scale Snap Step (m)", EditorXR.scaleSnapIncrement);
+
             if (GUILayout.Button("Reset to Defaults", GUILayout.Width(140)))
                 EditorXR.ResetPreferences();
 

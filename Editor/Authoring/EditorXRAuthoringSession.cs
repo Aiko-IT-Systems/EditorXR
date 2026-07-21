@@ -41,6 +41,7 @@ namespace Unity.EditorXR.Authoring
         static bool s_SnapshotDirty;
         static double s_NextRecoveryWrite;
         static bool s_Applying;
+        static bool s_PendingExitScheduled;
 
         internal static bool sessionActive
         {
@@ -68,6 +69,8 @@ namespace Unity.EditorXR.Authoring
             LoadRecovery();
             if (s_Data != null && Application.isPlaying && GetState() == AuthoringRecoveryState.Recording)
                 RehydrateRecordingState();
+            else
+                SchedulePendingExit();
         }
 
         [MenuItem(k_MenuRoot + "Start VR Authoring Session", false, 2000)]
@@ -825,12 +828,33 @@ namespace Unity.EditorXR.Authoring
                 CaptureChangeSet();
                 s_Data.state = AuthoringRecoveryState.PendingApply.ToString();
                 WriteRecovery();
+                Debug.Log("[EditorXR Authoring] Play Mode is exiting with pending changes. Waiting for the Apply / Discard choice.");
             }
             else if (state == PlayModeStateChange.EnteredEditMode && s_Data != null
                 && GetState() == AuthoringRecoveryState.PendingApply)
             {
-                EditorApplication.delayCall += HandlePendingExit;
+                SchedulePendingExit();
             }
+        }
+
+        static void SchedulePendingExit()
+        {
+            if (s_PendingExitScheduled || s_Data == null || GetState() != AuthoringRecoveryState.PendingApply)
+                return;
+
+            s_PendingExitScheduled = true;
+            EditorApplication.update += HandlePendingExitWhenReady;
+        }
+
+        static void HandlePendingExitWhenReady()
+        {
+            if (EditorApplication.isCompiling || EditorApplication.isUpdating
+                || Application.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode)
+                return;
+
+            EditorApplication.update -= HandlePendingExitWhenReady;
+            s_PendingExitScheduled = false;
+            HandlePendingExit();
         }
 
         static void HandlePendingExit()

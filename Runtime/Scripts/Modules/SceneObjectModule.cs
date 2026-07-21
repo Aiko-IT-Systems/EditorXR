@@ -30,6 +30,9 @@ namespace Unity.EditorXR.Modules
                 return;
             }
 
+            // The project workspace destroys its drag-preview wrapper immediately after this call.
+            // Detach synchronously so the placed prefab cannot be destroyed with that wrapper.
+            obj.SetParent(null, true);
             EditorMonoBehaviour.instance.StartCoroutine(PlaceSceneObjectCoroutine(obj, targetScale));
         }
 
@@ -52,7 +55,6 @@ namespace Unity.EditorXR.Modules
             var start = Time.realtimeSinceStartup;
             var currTime = 0f;
 
-            obj.parent = null;
             var localScale = obj.localScale;
             var startScale = localScale;
             var startPosition = BoundsUtils.GetBounds(obj).center;

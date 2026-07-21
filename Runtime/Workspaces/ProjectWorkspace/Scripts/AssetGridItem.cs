@@ -653,7 +653,6 @@ namespace Unity.EditorXR.Workspaces
                             UnityEditor.Undo.RegisterCreatedObjectUndo(previewObjectTransform.gameObject, "Place Scene Object");
 #endif
                         this.PlaceSceneObject(previewObjectTransform, m_PreviewPrefabScale);
-                        AuthoringSessionMethods.registerCreatedHierarchy(previewObjectTransform.gameObject);
                     }
                     else
                     {

@@ -194,7 +194,18 @@ namespace Unity.EditorXR.Modules
             }
 
             //Explicit setup call (instead of setting up in Awake) because we need interfaces to be hooked up first
-            workspace.Setup();
+            try
+            {
+                workspace.Setup();
+            }
+            catch
+            {
+                workspace.destroyed -= OnWorkspaceDestroyed;
+                m_Workspaces.Remove(workspace);
+                this.DisconnectInterfaces(workspace);
+                UnityObjectUtils.Destroy(workspaceComponent.gameObject);
+                throw;
+            }
 
             var offset = DefaultWorkspaceOffset;
             offset.z += workspace.vacuumBounds.extents.z;

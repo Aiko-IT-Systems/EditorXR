@@ -223,6 +223,22 @@ namespace Unity.EditorXR.ClientSim
             m_ClientSimMenuIsActive.SetValue(m_ClientSimMenu, false);
         }
 
+        public void EnsureClientSimMenuHidden()
+        {
+            if (m_ClientSimMenu == null)
+                return;
+
+            var menuRoot = (GameObject)m_ClientSimMenuRoot.GetValue(m_ClientSimMenu);
+            var menuIsActive = (bool)m_ClientSimMenuIsActive.GetValue(m_ClientSimMenu);
+            if (!menuIsActive && (menuRoot == null || !menuRoot.activeSelf))
+                return;
+
+            m_ToggleMenu.Invoke(m_ClientSimMenu, new object[] { false });
+            if (menuRoot != null)
+                menuRoot.SetActive(false);
+            m_ClientSimMenuIsActive.SetValue(m_ClientSimMenu, false);
+        }
+
         public void ApplyTracking(ClientSimXRFrame frame)
         {
             m_MouseReleased.SetValue(m_TrackingProvider, true);

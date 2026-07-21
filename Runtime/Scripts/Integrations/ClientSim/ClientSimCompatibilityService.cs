@@ -22,6 +22,7 @@ namespace Unity.EditorXR.ClientSim
         string m_Diagnostic;
         float m_NextBindAttempt;
         bool m_LoggedFailure, m_LoggedReady;
+        bool m_AuthoringOriginAligned;
 
         public static ClientSimCompatibilityService instance { get { return s_Instance; } }
         public ClientSimControlMode controlMode { get { return m_ActiveMode; } }
@@ -85,6 +86,7 @@ namespace Unity.EditorXR.ClientSim
             if (m_Adapter != null)
                 m_Adapter.ReleaseTrackingOverride();
             m_Adapter = null;
+            m_AuthoringOriginAligned = false;
             m_LoggedFailure = m_LoggedReady = false;
             ValidateContract();
         }
@@ -123,8 +125,9 @@ namespace Unity.EditorXR.ClientSim
                 catch (Exception exception) { FailClosed("Runtime binding failed: " + exception.Message); return; }
             }
 
-            if (m_ActiveMode == ClientSimControlMode.ClientSim)
-                ClientSimControlMethods.alignViewerToPlayer(m_Adapter.playerRoot);
+            AlignViewerToPlayerIfNeeded();
+            if (m_ActiveMode == ClientSimControlMode.Authoring)
+                m_Adapter.EnsureClientSimMenuHidden();
 
             ClientSimXRFrame frame;
             if (ClientSimMetaXRInput.TryGetFrame(out frame))
@@ -136,6 +139,7 @@ namespace Unity.EditorXR.ClientSim
             ReleaseInjectedState();
             if (m_Adapter != null)
                 m_Adapter.ReleaseTrackingOverride();
+            m_AuthoringOriginAligned = false;
             if (s_Instance == this)
                 ClientSimControlMethods.clientSimControlsActive = () => false;
         }
@@ -188,14 +192,30 @@ namespace Unity.EditorXR.ClientSim
             if (mode == m_ActiveMode) return;
             ReleaseInjectedState();
             m_ActiveMode = m_ControlMode = mode;
+            m_AuthoringOriginAligned = false;
             if (m_Adapter != null && m_Adapter.isBound)
             {
                 m_Adapter.SetClientSimMenuInputEnabled(mode == ClientSimControlMode.ClientSim);
-                if (mode == ClientSimControlMode.ClientSim)
-                    ClientSimControlMethods.alignViewerToPlayer(m_Adapter.playerRoot);
+                AlignViewerToPlayerIfNeeded();
             }
             var handler = controlModeChanged;
             if (handler != null) handler(mode);
+        }
+
+        void AlignViewerToPlayerIfNeeded()
+        {
+            if (m_Adapter == null || !m_Adapter.isBound)
+                return;
+
+            if (m_ActiveMode == ClientSimControlMode.ClientSim)
+            {
+                ClientSimControlMethods.alignViewerToPlayer(m_Adapter.playerRoot);
+                return;
+            }
+
+            // Authoring owns locomotion, but it still needs one valid world-space origin instead of a stale saved rig pose.
+            if (!m_AuthoringOriginAligned)
+                m_AuthoringOriginAligned = ClientSimControlMethods.alignViewerToPlayer(m_Adapter.playerRoot);
         }
 
         void ReleaseInjectedState()

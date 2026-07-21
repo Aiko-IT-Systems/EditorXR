@@ -71,7 +71,7 @@ namespace Unity.EditorXR.Workspaces
             }
         }
 
-        public string searchQuery { get { return m_FilterUI.searchQuery; } }
+        public string searchQuery { get { return m_FilterUI ? m_FilterUI.searchQuery : string.Empty; } }
 
         [Serializable]
         class Preferences
@@ -129,7 +129,6 @@ namespace Unity.EditorXR.Workspaces
             var folderListView = m_ProjectUI.folderListView;
             this.ConnectInterfaces(folderListView);
             folderListView.folderSelected += OnFolderSelected;
-            folderData = m_FolderData;
 
             m_FilterUI = EditorXRUtils.Instantiate(m_FilterPrefab, m_WorkspaceUI.frontPanel, false).GetComponent<FilterUI>();
             foreach (var mb in m_FilterUI.GetComponentsInChildren<MonoBehaviour>())
@@ -140,6 +139,9 @@ namespace Unity.EditorXR.Workspaces
 
             filterList = m_FilterList;
             m_FilterUI.filterChanged += RefreshVisibleAssets;
+
+            // Assigning folder data selects the first folder and refreshes assets, so the filter UI must exist first.
+            folderData = m_FolderData;
 
             foreach (var button in m_FilterUI.GetComponentsInChildren<WorkspaceButton>())
             {

@@ -178,11 +178,71 @@ namespace Unity.EditorXR.Utilities
             }
 
             if (!component)
+            {
+#if UNITY_EDITOR
+                var wasActive = go.activeSelf;
+                if (wasActive)
+                    go.SetActive(false);
+#endif
+
                 component = go.AddComponent(type);
+
+#if UNITY_EDITOR
+                ApplyEditorDefaultReferences(component);
+                if (wasActive)
+                    go.SetActive(true);
+#endif
+            }
 
             go.SetRunInEditModeRecursively(true);
             return component;
         }
+
+        internal static bool ShouldHideEditorOnlyWorkspace(Type type)
+        {
+#if UNITY_EDITOR
+            // EditorXR authoring intentionally runs inside Play Mode for XR and ClientSim input.
+            return false;
+#else
+            return Attribute.IsDefined(type, typeof(EditorOnlyWorkspaceAttribute), true);
+#endif
+        }
+
+#if UNITY_EDITOR
+        internal static int ApplyEditorDefaultReferences(Component component)
+        {
+            var behaviour = component as MonoBehaviour;
+            if (!behaviour)
+                return 0;
+
+            var script = MonoScript.FromMonoBehaviour(behaviour);
+            var importer = AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(script)) as MonoImporter;
+            if (!importer)
+                return 0;
+
+            var assigned = 0;
+            for (var currentType = component.GetType(); currentType != null; currentType = currentType.BaseType)
+            {
+                var fields = currentType.GetFields(System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
+                    | System.Reflection.BindingFlags.DeclaredOnly);
+                foreach (var field in fields)
+                {
+                    if (!typeof(UnityObject).IsAssignableFrom(field.FieldType) || field.GetValue(component) != null)
+                        continue;
+
+                    var reference = importer.GetDefaultReference(field.Name);
+                    if (!reference || !field.FieldType.IsInstanceOfType(reference))
+                        continue;
+
+                    field.SetValue(component, reference);
+                    assigned++;
+                }
+            }
+
+            return assigned;
+        }
+#endif
 
         public static T CopyComponent<T>(T sourceComponent, GameObject targetGameObject) where T : Component
         {

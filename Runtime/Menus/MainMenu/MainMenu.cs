@@ -235,8 +235,7 @@ namespace Unity.EditorXR.Menus
             types.UnionWith(settingsMenuProviders.Keys.Select(provider => provider.Item1));
             types.UnionWith(settingsMenuItemProviders.Keys.Select(provider => provider.Item1));
 
-            if (Application.isPlaying)
-                types.RemoveWhere(type => type.GetCustomAttributes(true).OfType<EditorOnlyWorkspaceAttribute>().Any());
+            types.RemoveWhere(EditorXRUtils.ShouldHideEditorOnlyWorkspace);
 
             foreach (var type in types)
             {

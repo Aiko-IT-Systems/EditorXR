@@ -2,7 +2,10 @@ using NUnit.Framework;
 using Unity.EditorXR.Core;
 using Unity.EditorXR.Input;
 using Unity.EditorXR.Tools;
+using Unity.EditorXR.Utilities;
+using Unity.EditorXR.Workspaces;
 using UnityEditor;
+using UnityEngine;
 using UnityEngine.XR;
 
 namespace Unity.EditorXR.Tests
@@ -73,6 +76,34 @@ namespace Unity.EditorXR.Tests
             Assert.IsTrue(EditorXRToolModule.ToolSupportsRole(typeof(LocomotionTool), ControllerRole.Authoring,
                 out companion));
             Assert.IsTrue(companion);
+        }
+
+        [Test]
+        public void EditorOnlyWorkspacesRemainAvailableForAuthoringPlayMode()
+        {
+            Assert.IsFalse(EditorXRUtils.ShouldHideEditorOnlyWorkspace(typeof(ProjectWorkspace)));
+            Assert.IsFalse(EditorXRUtils.ShouldHideEditorOnlyWorkspace(typeof(HierarchyWorkspace)));
+        }
+
+        [Test]
+        public void ProjectWorkspaceReceivesEditorDefaultReferences()
+        {
+            var go = new GameObject("Project Workspace Reference Test");
+            go.SetActive(false);
+            try
+            {
+                var workspace = go.AddComponent<ProjectWorkspace>();
+                Assert.Greater(EditorXRUtils.ApplyEditorDefaultReferences(workspace), 0);
+
+                var contentField = typeof(ProjectWorkspace).GetField("m_ContentPrefab",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                Assert.IsNotNull(contentField);
+                Assert.IsNotNull(contentField.GetValue(workspace));
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
         }
 
         [Test]

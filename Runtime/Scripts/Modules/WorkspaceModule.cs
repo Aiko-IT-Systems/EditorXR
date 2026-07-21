@@ -293,7 +293,7 @@ namespace Unity.EditorXR.Modules
                     if (Core.EditorXR.HiddenTypes.Contains(workspaceType))
                         continue;
 
-                    if (Application.isPlaying && workspaceType.GetCustomAttributes(true).OfType<EditorOnlyWorkspaceAttribute>().Any())
+                    if (EditorXRUtils.ShouldHideEditorOnlyWorkspace(workspaceType))
                         continue;
 
                     CreateWorkspace(workspaceType, workspace =>

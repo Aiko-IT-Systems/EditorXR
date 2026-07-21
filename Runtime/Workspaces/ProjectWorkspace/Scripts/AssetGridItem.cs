@@ -342,6 +342,15 @@ namespace Unity.EditorXR.Workspaces
 
         protected override void OnPointerDown(BaseHandle handle, HandleEventData eventData)
         {
+#if UNITY_EDITOR
+            if (data.asset == null)
+            {
+                data.asset = AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GUIDToAssetPath(data.guid));
+                data.preview = data.asset as GameObject;
+                InstantiatePreview();
+            }
+#endif
+
             base.OnPointerDown(handle, eventData);
 
             var rayOrigin = eventData.rayOrigin;

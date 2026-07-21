@@ -239,8 +239,8 @@ namespace Unity.EditorXR.Workspaces
             }
 
 #if UNITY_EDITOR
-            // If this AssetData hasn't fetched its asset yet, do so now
-            if (data.asset == null)
+            // Only thumbnail types need their assets while browsing. Other assets are loaded when grabbed.
+            if (data.asset == null && (data.type == "Material" || data.type == "Texture" || data.type == "Texture2D"))
             {
                 data.asset = AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GUIDToAssetPath(data.guid));
                 data.preview = data.asset as GameObject;
@@ -288,8 +288,15 @@ namespace Unity.EditorXR.Workspaces
         {
             item.fallbackTexture = null;
 #if UNITY_EDITOR
-            item.StartCoroutine(EditorUtils.GetAssetPreview(
-                AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GUIDToAssetPath(data.guid)),
+            var path = AssetDatabase.GUIDToAssetPath(data.guid);
+            var cachedIcon = AssetDatabase.GetCachedIcon(path);
+            if (cachedIcon)
+            {
+                item.fallbackTexture = cachedIcon;
+                return;
+            }
+
+            item.StartCoroutine(EditorUtils.GetAssetPreview(AssetDatabase.LoadMainAssetAtPath(path),
                 texture => item.fallbackTexture = texture));
 #endif
         }

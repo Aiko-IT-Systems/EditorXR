@@ -123,6 +123,8 @@ namespace Unity.EditorXR.Tests.Authoring
 
             Assert.IsFalse(properties.Exists(property => property.propertyPath.StartsWith("m_GameObject")));
             Assert.IsFalse(properties.Exists(property => property.propertyPath.StartsWith("m_Prefab")));
+            Assert.IsFalse(properties.Exists(property => property.propertyPath.EndsWith(".m_FileID")));
+            Assert.IsFalse(properties.Exists(property => property.propertyPath.EndsWith(".m_PathID")));
             Assert.IsTrue(properties.Exists(property => property.propertyPath == "m_IsTrigger"));
         }
 

@@ -427,6 +427,9 @@ namespace Unity.EditorXR.Authoring
         {
             if (string.IsNullOrEmpty(propertyPath))
                 return false;
+            if (propertyPath.EndsWith(".m_FileID", StringComparison.Ordinal)
+                || propertyPath.EndsWith(".m_PathID", StringComparison.Ordinal))
+                return false;
 
             foreach (var root in k_UnsafePropertyRoots)
             {

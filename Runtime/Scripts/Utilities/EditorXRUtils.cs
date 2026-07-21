@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using Unity.XRTools.Utils;
 using UnityEditor;
 using UnityEngine;
@@ -9,7 +11,14 @@ namespace Unity.EditorXR.Utilities
 {
     static class EditorXRUtils
     {
+        const string k_PackageAssetPrefix = "Packages/com.unity.editorxr/";
+        const string k_WritablePackageAssetRoot = "Assets/EditorXR Generated/Package Assets/";
+
         static HideFlags s_HideFlags = HideFlags.DontSaveInEditor;
+
+#if UNITY_EDITOR
+        static readonly HashSet<string> s_SynchronizedPrefabPaths = new HashSet<string>();
+#endif
 
         public static HideFlags hideFlags
         {
@@ -44,6 +53,9 @@ namespace Unity.EditorXR.Utilities
         public static GameObject Instantiate(GameObject prefab, Transform parent = null, bool worldPositionStays = true,
             bool runInEditMode = true, bool active = true)
         {
+#if UNITY_EDITOR
+            prefab = GetWritablePackagePrefab(prefab);
+#endif
             var go = UnityObject.Instantiate(prefab, parent, worldPositionStays);
             if (worldPositionStays)
             {
@@ -68,6 +80,71 @@ namespace Unity.EditorXR.Utilities
         }
 
 #if UNITY_EDITOR
+        static GameObject GetWritablePackagePrefab(GameObject prefab)
+        {
+            if (!prefab)
+                return prefab;
+
+            var sourcePath = AssetDatabase.GetAssetPath(prefab);
+            if (!sourcePath.StartsWith(k_PackageAssetPrefix, StringComparison.OrdinalIgnoreCase))
+                return prefab;
+
+            var destinationPath = k_WritablePackageAssetRoot + sourcePath.Substring(k_PackageAssetPrefix.Length);
+            if (!s_SynchronizedPrefabPaths.Add(destinationPath))
+                return AssetDatabase.LoadAssetAtPath<GameObject>(destinationPath) ?? prefab;
+
+            EnsureAssetFolder(Path.GetDirectoryName(destinationPath));
+
+            var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssetPath(sourcePath);
+            if (packageInfo == null)
+                return prefab;
+
+            var relativeSourcePath = sourcePath.Substring(("Packages/" + packageInfo.name + "/").Length);
+            var physicalSourcePath = Path.Combine(packageInfo.resolvedPath, relativeSourcePath);
+            var physicalDestinationPath = Path.GetFullPath(destinationPath);
+
+            if (!File.Exists(physicalDestinationPath))
+            {
+                if (!AssetDatabase.CopyAsset(sourcePath, destinationPath))
+                    return prefab;
+            }
+            else if (!FilesMatch(physicalSourcePath, physicalDestinationPath))
+            {
+                File.Copy(physicalSourcePath, physicalDestinationPath, true);
+                AssetDatabase.ImportAsset(destinationPath, ImportAssetOptions.ForceUpdate);
+            }
+
+            return AssetDatabase.LoadAssetAtPath<GameObject>(destinationPath) ?? prefab;
+        }
+
+        static void EnsureAssetFolder(string folderPath)
+        {
+            if (AssetDatabase.IsValidFolder(folderPath))
+                return;
+
+            var parentPath = Path.GetDirectoryName(folderPath).Replace('\\', '/');
+            EnsureAssetFolder(parentPath);
+            AssetDatabase.CreateFolder(parentPath, Path.GetFileName(folderPath));
+        }
+
+        static bool FilesMatch(string firstPath, string secondPath)
+        {
+            var first = new FileInfo(firstPath);
+            var second = new FileInfo(secondPath);
+            if (!first.Exists || !second.Exists || first.Length != second.Length)
+                return false;
+
+            var firstBytes = File.ReadAllBytes(firstPath);
+            var secondBytes = File.ReadAllBytes(secondPath);
+            for (var i = 0; i < firstBytes.Length; ++i)
+            {
+                if (firstBytes[i] != secondBytes[i])
+                    return false;
+            }
+
+            return true;
+        }
+
         static void IsolatePackageMaterials(GameObject root)
         {
             var clones = new System.Collections.Generic.Dictionary<Material, Material>();

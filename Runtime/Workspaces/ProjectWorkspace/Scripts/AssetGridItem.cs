@@ -31,7 +31,8 @@ namespace Unity.EditorXR.Workspaces
         const float k_RotateSpeed = 50f;
         const float k_TransitionDuration = 0.1f;
         const float k_ScaleBump = 1.1f;
-        const int k_PreviewRenderQueue = 9200;
+        const int k_OpaquePreviewRenderQueue = 2449;
+        const int k_TransparentPreviewRenderQueue = 3999;
 
         const int k_AutoHidePreviewVertexCount = 10000;
         const int k_HidePreviewVertexCount = 100000;
@@ -136,7 +137,7 @@ namespace Unity.EditorXR.Workspaces
                     UnityObjectUtils.Destroy(m_SphereMaterial);
 
                 m_SphereMaterial = Instantiate(value);
-                m_SphereMaterial.renderQueue = k_PreviewRenderQueue;
+                m_SphereMaterial.renderQueue = GetPreviewRenderQueue(m_SphereMaterial);
                 m_Sphere.sharedMaterial = m_SphereMaterial;
                 m_Sphere.gameObject.SetActive(true);
 
@@ -167,7 +168,7 @@ namespace Unity.EditorXR.Workspaces
                     UnityObjectUtils.Destroy(m_SphereMaterial);
 
                 m_SphereMaterial = new Material(Shader.Find("Standard")) { mainTexture = value };
-                m_SphereMaterial.renderQueue = k_PreviewRenderQueue;
+                m_SphereMaterial.renderQueue = GetPreviewRenderQueue(m_SphereMaterial);
                 m_Sphere.sharedMaterial = m_SphereMaterial;
             }
         }
@@ -619,6 +620,17 @@ namespace Unity.EditorXR.Workspaces
 
         protected override void OnPointerUp(BaseHandle handle, HandleEventData eventData)
         {
+            // The ray can leave the target during pointer-up, especially with XR controller jitter.
+            // Commit against the last target that was validated while dragging instead of re-raycasting after release.
+            var checkChildren = data.type == "Material" || data.type == "PhysicMaterial";
+            var dropSelection = m_CachedDropSelection && CheckAssignable(m_CachedDropSelection, checkChildren)
+                ? m_CachedDropSelection
+                : TryGetSelection(eventData.rayOrigin);
+            if (dropSelection && !CheckAssignable(dropSelection, checkChildren))
+                dropSelection = null;
+            if (data.type == "Material")
+                AssetAssignmentSession.Begin(data.asset as Material);
+
             m_ObjectAssignmentChecks.Clear();
             StopHighlight(m_CachedDropSelection, eventData.rayOrigin);
             RestoreOriginalSelectionMaterials();
@@ -645,7 +657,7 @@ namespace Unity.EditorXR.Workspaces
                     }
                     else
                     {
-                        HandleAssetDropByType(rayOrigin, gridItem);
+                        HandleAssetDropByType(gridItem, dropSelection);
                     }
                 }
             }
@@ -654,7 +666,7 @@ namespace Unity.EditorXR.Workspaces
             base.OnPointerUp(handle, eventData);
         }
 
-        void HandleAssetDropByType(Transform rayOrigin, AssetGridItem gridItem)
+        void HandleAssetDropByType(AssetGridItem gridItem, GameObject dropSelection)
         {
             switch (data.type)
             {
@@ -665,43 +677,42 @@ namespace Unity.EditorXR.Workspaces
 
 #if INCLUDE_ANIMATION_MODULE
                 case "AnimationClip":
-                    SelectAndPlace(rayOrigin, data, AssetDropUtils.AssignAnimationClipAction);
+                    SelectAndPlace(dropSelection, data, AssetDropUtils.AssignAnimationClipAction);
                     break;
 #endif
 
 #if INCLUDE_AUDIO_MODULE
                 case "AudioClip":
-                    SelectAndPlace(rayOrigin, data, AssetDropUtils.AudioClipAction);
+                    SelectAndPlace(dropSelection, data, AssetDropUtils.AudioClipAction);
                     break;
 #endif
 
 #if INCLUDE_VIDEO_MODULE
                 case "VideoClip":
-                    SelectAndPlace(rayOrigin, data, AssetDropUtils.VideoClipAction);
+                    SelectAndPlace(dropSelection, data, AssetDropUtils.VideoClipAction);
                     break;
 #endif
 
                 case "Font":
-                    SelectAndPlace(rayOrigin, data, AssetDropUtils.AssignFontAction);
+                    SelectAndPlace(dropSelection, data, AssetDropUtils.AssignFontAction);
                     break;
                 case "PhysicMaterial":
-                    SelectAndPlace(rayOrigin, data, AssetDropUtils.AssignPhysicMaterialAction);
+                    SelectAndPlace(dropSelection, data, AssetDropUtils.AssignPhysicMaterialAction);
                     break;
                 case "Material":
-                    SelectAndPlace(rayOrigin, data, AssetDropUtils.AssignMaterialAction);
+                    SelectAndPlace(dropSelection, data, AssetDropUtils.AssignMaterialAction);
                     break;
                 case "Script":
-                    SelectAndPlace(rayOrigin, data, AssetDropUtils.AttachScriptAction);
+                    SelectAndPlace(dropSelection, data, AssetDropUtils.AttachScriptAction);
                     break;
                 case "Shader":
-                    SelectAndPlace(rayOrigin, data, AssetDropUtils.AssignShaderAction);
+                    SelectAndPlace(dropSelection, data, AssetDropUtils.AssignShaderAction);
                     break;
             }
         }
 
-        void SelectAndPlace(Transform rayOrigin, AssetData data, Action<GameObject, AssetData> placeFunc)
+        void SelectAndPlace(GameObject selection, AssetData data, Action<GameObject, AssetData> placeFunc)
         {
-            var selection = TryGetSelection(rayOrigin);
             if (selection != null)
             {
                 placeFunc.Invoke(selection, data);
@@ -750,6 +761,17 @@ namespace Unity.EditorXR.Workspaces
         GameObject TryGetSelection(Transform rayOrigin)
         {
             return TryGetSelection(rayOrigin, m_IncludeRaySelectForDrop);
+        }
+
+        static int GetPreviewRenderQueue(Material material)
+        {
+            if (!material)
+                return k_OpaquePreviewRenderQueue;
+
+            var renderType = material.GetTag("RenderType", false, string.Empty);
+            return renderType == "Transparent" || material.renderQueue >= 2500
+                ? k_TransparentPreviewRenderQueue
+                : k_OpaquePreviewRenderQueue;
         }
 
         void OnHoverStarted(BaseHandle handle, HandleEventData eventData)

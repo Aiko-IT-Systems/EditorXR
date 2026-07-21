@@ -23,7 +23,8 @@ namespace Unity.EditorXR.Tools
         IUsesIsMainMenuVisible, IUsesIsInMiniWorld, IRayToNode, IUsesGetDefaultRayColor, IUsesSetDefaultRayColor,
         ITooltip, ITooltipPlacement, IUsesSetTooltipVisibility,IUsesDeviceType, IMenuIcon, IUsesPointer,
         IUsesRayVisibilitySettings, IUsesViewerScale, IUsesCheckSphere, ISettingsMenuItemProvider, ISerializePreferences,
-        IStandardIgnoreList, IUsesBlockUIInteraction, IUsesRequestFeedback, IUsesGetVRPlayerObjects, IUsesCheckBounds
+        IStandardIgnoreList, IUsesBlockUIInteraction, IUsesRequestFeedback, IUsesGetVRPlayerObjects, IUsesCheckBounds,
+        IUpdateInspectors
     {
         [Serializable]
         class Preferences
@@ -356,7 +357,8 @@ namespace Unity.EditorXR.Tools
 
                     // Only overwrite an existing selection if it does not contain the hovered object
                     // In the case of multi-select, only add, do not remove
-                    if (selectionTool.m_SelectionInput != null && selectionTool.m_SelectionInput.select.wasJustPressed && !Selection.objects.Contains(directHoveredObject))
+                    if (!AssetAssignmentSession.active && selectionTool.m_SelectionInput != null
+                        && selectionTool.m_SelectionInput.select.wasJustPressed && !Selection.objects.Contains(directHoveredObject))
                         this.SelectObject(directHoveredObject, directRayOrigin, m_MultiSelect);
 
                     m_HoverGameObjects[directRayOrigin] = directHoveredObject;
@@ -400,6 +402,18 @@ namespace Unity.EditorXR.Tools
 
             // Capture object on press
             var select = m_SelectionInput.select;
+            if (AssetAssignmentSession.active)
+            {
+                if (select.wasJustPressed && hoveredObject && AssetAssignmentSession.Apply(hoveredObject))
+                    this.UpdateInspectors(hoveredObject, true);
+
+                if (select.isHeld || select.wasJustPressed || select.wasJustReleased)
+                    consumeControl(select);
+
+                m_PressedObject = null;
+                return;
+            }
+
             if (select.wasJustPressed)
             {
                 m_SelectStartPosition = pointerPosition;

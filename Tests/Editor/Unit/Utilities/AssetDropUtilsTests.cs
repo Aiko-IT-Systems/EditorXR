@@ -15,12 +15,29 @@ namespace Unity.EditorXR.Tests.Utilities
         [TearDown]
         public void TearDown()
         {
+            AssetAssignmentSession.Cancel();
             if (m_Root)
                 Object.DestroyImmediate(m_Root);
             if (m_Material)
                 Object.DestroyImmediate(m_Material);
             if (m_PhysicMaterial)
                 Object.DestroyImmediate(m_PhysicMaterial);
+        }
+
+        [Test]
+        public void MaterialAssignmentSession_PersistsUntilCancelled()
+        {
+            m_Root = new GameObject("Root", typeof(MeshRenderer));
+            m_Material = new Material(Shader.Find("Hidden/InternalErrorShader"));
+
+            Assert.IsTrue(AssetAssignmentSession.Begin(m_Material));
+            Assert.IsTrue(AssetAssignmentSession.active);
+            Assert.IsTrue(AssetAssignmentSession.Apply(m_Root));
+            Assert.AreSame(m_Material, m_Root.GetComponent<MeshRenderer>().sharedMaterial);
+            Assert.IsTrue(AssetAssignmentSession.active);
+
+            Assert.IsTrue(AssetAssignmentSession.Cancel());
+            Assert.IsFalse(AssetAssignmentSession.active);
         }
 
         [Test]

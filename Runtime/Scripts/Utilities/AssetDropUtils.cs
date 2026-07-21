@@ -149,13 +149,21 @@ namespace Unity.EditorXR.Utilities
 
         internal static Renderer AssignMaterial(GameObject go, AssetData data)
         {
+            return AssignMaterial(go, data.asset as Material);
+        }
+
+        internal static Renderer AssignMaterial(GameObject go, Material material)
+        {
+            if (!go || !material)
+                return null;
+
             var renderers = go.GetComponentsInChildren<Renderer>(true);
             foreach (var renderer in renderers)
             {
 #if UNITY_EDITOR
                 RecordObject(renderer, k_AssignMaterialUndo);
 #endif
-                renderer.sharedMaterial = (Material)data.asset;
+                renderer.sharedMaterial = material;
             }
 
             return renderers.Length > 0 ? renderers[0] : null;

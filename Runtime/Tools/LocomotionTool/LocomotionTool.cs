@@ -341,6 +341,14 @@ namespace Unity.EditorXR.Tools
             var authoring = authoringTool.m_LocomotionInput;
             var commandHeld = utility.crawl.isHeld;
             var menuModule = ModuleLoaderCore.instance.GetModule<EditorXRMenuModule>();
+            if (AssetAssignmentSession.active
+                && (authoring.reverse.wasJustPressed || authoring.forward.wasJustPressed))
+            {
+                AssetAssignmentSession.Cancel();
+                consumeControl(authoring.reverse.wasJustPressed ? authoring.reverse : authoring.forward);
+                return true;
+            }
+
             if (!commandHeld && authoring.reverse.wasJustPressed && menuModule != null
                 && menuModule.IsRadialMenuOpen(authoringTool.rayOrigin))
             {

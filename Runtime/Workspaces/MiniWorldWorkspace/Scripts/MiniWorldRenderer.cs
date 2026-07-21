@@ -118,7 +118,9 @@ namespace Unity.EditorXR.Workspaces
                 // in the case of the SceneView rendering, etc.
                 m_MiniCamera.targetTexture = RenderTexture.active;
 
-                m_MiniCamera.SetReplacementShader(m_ClipShader, "RenderType");
+                // Custom VRChat and vegetation shaders use many non-standard RenderType tags. Matching by tag
+                // leaves those objects on Unity's error shader, so use the generic clipping pass for every renderer.
+                m_MiniCamera.SetReplacementShader(m_ClipShader, string.Empty);
                 m_MiniCamera.Render();
 
                 for (var i = 0; i < m_IgnoreList.Count; i++)

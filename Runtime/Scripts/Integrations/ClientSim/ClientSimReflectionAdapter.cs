@@ -14,15 +14,18 @@ namespace Unity.EditorXR.ClientSim
         public const string ExpectedVersion = "3.10.4";
         const BindingFlags k_All = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
         readonly FieldInfo m_MainInstance, m_MainInputManager, m_Input, m_Head, m_LeftHand, m_RightHand,
-            m_MouseReleased, m_PlayerXRotationBase, m_PlayerYRotationBase;
-        readonly Type m_TrackingProviderType;
+            m_MouseReleased, m_PlayerXRotationBase, m_PlayerYRotationBase, m_ClientSimMenuInput,
+            m_ClientSimMenuRoot, m_ClientSimMenuIsActive;
+        readonly Type m_TrackingProviderType, m_ClientSimMenuType;
         readonly MethodInfo m_HasInstance, m_SendJump, m_SendUse, m_SendGrab, m_SendDrop, m_SendMenu, m_SendRun,
-            m_SendInputMethod;
+            m_SendInputMethod, m_SubscribeToggleMenu, m_UnsubscribeToggleMenu, m_ToggleMenu,
+            m_HandleInputMenuToggle;
         readonly object m_LeftHandValue, m_RightHandValue, m_OculusInputMethod;
-        object m_InputObject, m_TrackingProvider;
+        object m_InputObject, m_TrackingProvider, m_ClientSimMenu, m_ClientSimMenuInputObject;
+        Delegate m_ClientSimMenuToggleHandler;
         Transform m_HeadTransform, m_LeftHandTransform, m_RightHandTransform, m_PlayerXRotationTransform,
             m_PlayerYRotationTransform, m_PlayerRoot;
-        bool m_PreviousMouseReleased;
+        bool m_PreviousMouseReleased, m_ClientSimMenuInputSuppressed, m_ClientSimMenuWasActive;
 
         public bool isBound { get { return m_InputObject != null && m_TrackingProvider != null && m_HeadTransform != null; } }
         public Transform playerRoot { get { return m_PlayerRoot; } }
@@ -36,8 +39,11 @@ namespace Unity.EditorXR.ClientSim
             m_TrackingProviderType = RequireType(assembly, "VRC.SDK3.ClientSim.ClientSimTrackingProviderBase");
             var desktopTrackingProvider = RequireType(assembly, "VRC.SDK3.ClientSim.ClientSimDesktopTrackingProvider");
             var inputModule = RequireType(assembly, "VRC.SDK3.ClientSim.ClientSimInputModule");
+            m_ClientSimMenuType = RequireType(assembly, "VRC.SDK3.ClientSim.ClientSimMenu");
+            var clientSimInput = RequireType(assembly, "VRC.SDK3.ClientSim.IClientSimInput");
             var handType = RequireType("VRC.Udon.Common.HandType");
             var inputMethodType = RequireType("VRC.SDKBase.VRCInputMethod");
+            var menuToggleHandlerType = typeof(Action<,>).MakeGenericType(typeof(bool), handType);
             if (!typeof(BaseInputModule).IsAssignableFrom(inputModule))
                 throw new MissingMemberException(inputModule.FullName, "BaseInputModule inheritance");
 
@@ -52,6 +58,9 @@ namespace Unity.EditorXR.ClientSim
             m_MouseReleased = RequireField(desktopTrackingProvider, "_mouseReleased", typeof(bool), false);
             m_PlayerXRotationBase = RequireField(desktopTrackingProvider, "playerXRotationBase", typeof(Transform), false);
             m_PlayerYRotationBase = RequireField(desktopTrackingProvider, "playerYRotationBase", typeof(Transform), false);
+            m_ClientSimMenuInput = RequireField(m_ClientSimMenuType, "_input", clientSimInput, false);
+            m_ClientSimMenuRoot = RequireField(m_ClientSimMenuType, "menu", typeof(GameObject), false);
+            m_ClientSimMenuIsActive = RequireField(m_ClientSimMenuType, "_menuIsActive", typeof(bool), false);
             var handArgs = new[] { typeof(bool), handType };
             m_SendJump = RequireMethod(inputBase, "SendJumpEvent", typeof(void), handArgs);
             m_SendUse = RequireMethod(inputBase, "SendUseEvent", typeof(void), handArgs);
@@ -61,6 +70,13 @@ namespace Unity.EditorXR.ClientSim
             m_SendRun = RequireMethod(inputBase, "SendRunEvent", typeof(void), new[] { typeof(bool) });
             m_SendInputMethod = RequireMethod(inputBase, "SendInputMethodChangedEvent", typeof(void),
                 new[] { inputMethodType });
+            m_SubscribeToggleMenu = RequireMethod(clientSimInput, "SubscribeToggleMenu", typeof(void),
+                new[] { menuToggleHandlerType });
+            m_UnsubscribeToggleMenu = RequireMethod(clientSimInput, "UnsubscribeToggleMenu", typeof(void),
+                new[] { menuToggleHandlerType });
+            m_ToggleMenu = RequireMethod(m_ClientSimMenuType, "ToggleMenu", typeof(void), new[] { typeof(bool) });
+            m_HandleInputMenuToggle = RequireMethod(m_ClientSimMenuType, "HandleInputMenuToggle", typeof(void),
+                handArgs);
             m_LeftHandValue = Enum.Parse(handType, "LEFT");
             m_RightHandValue = Enum.Parse(handType, "RIGHT");
             m_OculusInputMethod = Enum.Parse(inputMethodType, "Oculus");
@@ -137,7 +153,25 @@ namespace Unity.EditorXR.ClientSim
                 m_InputObject = null;
                 return false;
             }
+            var menus = Resources.FindObjectsOfTypeAll(m_ClientSimMenuType).OfType<Component>()
+                .Where(item => item.gameObject.scene.IsValid() && item.gameObject.activeInHierarchy).ToArray();
+            if (menus.Length != 1)
+            {
+                m_InputObject = null;
+                return false;
+            }
+            var menuInput = m_ClientSimMenuInput.GetValue(menus[0]);
+            if (menuInput == null)
+            {
+                m_InputObject = null;
+                return false;
+            }
+
             m_TrackingProvider = providers[0];
+            m_ClientSimMenu = menus[0];
+            m_ClientSimMenuInputObject = menuInput;
+            m_ClientSimMenuToggleHandler = Delegate.CreateDelegate(
+                m_SubscribeToggleMenu.GetParameters()[0].ParameterType, m_ClientSimMenu, m_HandleInputMenuToggle);
             m_PlayerRoot = providers[0].transform.root;
             m_HeadTransform = (Transform)m_Head.GetValue(m_TrackingProvider);
             m_LeftHandTransform = (Transform)m_LeftHand.GetValue(m_TrackingProvider);
@@ -156,6 +190,39 @@ namespace Unity.EditorXR.ClientSim
             return true;
         }
 
+        public void SetClientSimMenuInputEnabled(bool enabled)
+        {
+            if (m_ClientSimMenu == null || m_ClientSimMenuInputObject == null || m_ClientSimMenuToggleHandler == null)
+                return;
+
+            if (enabled)
+            {
+                if (!m_ClientSimMenuInputSuppressed)
+                    return;
+
+                m_SubscribeToggleMenu.Invoke(m_ClientSimMenuInputObject, new object[] { m_ClientSimMenuToggleHandler });
+                m_ClientSimMenuInputSuppressed = false;
+                if (m_ClientSimMenuWasActive)
+                    m_ToggleMenu.Invoke(m_ClientSimMenu, new object[] { true });
+                m_ClientSimMenuWasActive = false;
+                return;
+            }
+
+            if (!m_ClientSimMenuInputSuppressed)
+            {
+                m_ClientSimMenuWasActive = (bool)m_ClientSimMenuIsActive.GetValue(m_ClientSimMenu);
+                m_UnsubscribeToggleMenu.Invoke(m_ClientSimMenuInputObject,
+                    new object[] { m_ClientSimMenuToggleHandler });
+                m_ClientSimMenuInputSuppressed = true;
+            }
+
+            m_ToggleMenu.Invoke(m_ClientSimMenu, new object[] { false });
+            var menuRoot = (GameObject)m_ClientSimMenuRoot.GetValue(m_ClientSimMenu);
+            if (menuRoot != null)
+                menuRoot.SetActive(false);
+            m_ClientSimMenuIsActive.SetValue(m_ClientSimMenu, false);
+        }
+
         public void ApplyTracking(ClientSimXRFrame frame)
         {
             m_MouseReleased.SetValue(m_TrackingProvider, true);
@@ -167,6 +234,9 @@ namespace Unity.EditorXR.ClientSim
 
         public void ReleaseTrackingOverride()
         {
+            try { SetClientSimMenuInputEnabled(true); }
+            catch (Exception) { }
+
             if (m_TrackingProvider != null)
                 m_MouseReleased.SetValue(m_TrackingProvider, m_PreviousMouseReleased);
 
@@ -178,6 +248,11 @@ namespace Unity.EditorXR.ClientSim
             m_PlayerXRotationTransform = null;
             m_PlayerYRotationTransform = null;
             m_PlayerRoot = null;
+            m_ClientSimMenu = null;
+            m_ClientSimMenuInputObject = null;
+            m_ClientSimMenuToggleHandler = null;
+            m_ClientSimMenuInputSuppressed = false;
+            m_ClientSimMenuWasActive = false;
         }
 
         void ResetDesktopRotation()

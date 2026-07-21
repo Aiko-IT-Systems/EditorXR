@@ -115,6 +115,7 @@ namespace Unity.EditorXR.ClientSim
                 try
                 {
                     if (!m_Adapter.TryBind()) return;
+                    m_Adapter.SetClientSimMenuInputEnabled(m_ActiveMode == ClientSimControlMode.ClientSim);
                     m_Status = ClientSimCompatibilityStatus.Compatible;
                     m_Diagnostic = "ClientSim 3.10.4 is bound; safe pose and button bridging is available.";
                     if (!m_LoggedReady) { Debug.Log("[EditorXR ClientSim] " + m_Diagnostic, this); m_LoggedReady = true; }
@@ -187,8 +188,12 @@ namespace Unity.EditorXR.ClientSim
             if (mode == m_ActiveMode) return;
             ReleaseInjectedState();
             m_ActiveMode = m_ControlMode = mode;
-            if (mode == ClientSimControlMode.ClientSim && m_Adapter != null && m_Adapter.isBound)
-                ClientSimControlMethods.alignViewerToPlayer(m_Adapter.playerRoot);
+            if (m_Adapter != null && m_Adapter.isBound)
+            {
+                m_Adapter.SetClientSimMenuInputEnabled(mode == ClientSimControlMode.ClientSim);
+                if (mode == ClientSimControlMode.ClientSim)
+                    ClientSimControlMethods.alignViewerToPlayer(m_Adapter.playerRoot);
+            }
             var handler = controlModeChanged;
             if (handler != null) handler(mode);
         }

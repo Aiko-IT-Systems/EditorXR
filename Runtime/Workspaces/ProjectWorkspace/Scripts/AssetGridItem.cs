@@ -26,6 +26,7 @@ namespace Unity.EditorXR.Workspaces
         const float k_PreviewDuration = 0.1f;
         const float k_MinPreviewScale = 0.01f;
         const float k_IconPreviewScale = 0.1f;
+        const float k_AssignmentPreviewScale = 0.035f;
         const float k_MaxPreviewScale = 0.2f;
         const float k_RotateSpeed = 50f;
         const float k_TransitionDuration = 0.1f;
@@ -68,7 +69,7 @@ namespace Unity.EditorXR.Workspaces
         Transform m_PreviewObjectTransform;
 
         [SerializeField]
-        bool m_IncludeRaySelectForDrop;
+        bool m_IncludeRaySelectForDrop = true;
 #pragma warning restore 649
 
         GameObject m_IconPrefab;
@@ -456,6 +457,7 @@ namespace Unity.EditorXR.Workspaces
                 if (selection != m_CachedDropSelection)
                 {
                     StopHighlight(m_CachedDropSelection);
+                    RestoreOriginalSelectionMaterials();
                     // if we've previously checked this object, indicate the result again
                     if (previous > 0f)
                     {
@@ -575,6 +577,8 @@ namespace Unity.EditorXR.Workspaces
         {
             m_ObjectAssignmentChecks.Clear();
             StopHighlight(m_CachedDropSelection, eventData.rayOrigin);
+            RestoreOriginalSelectionMaterials();
+            m_CachedDropSelection = null;
 
             var gridItem = m_DragObject.GetComponent<AssetGridItem>();
 
@@ -811,6 +815,8 @@ namespace Unity.EditorXR.Workspaces
 
         void OnDestroy()
         {
+            RestoreOriginalSelectionMaterials();
+
             if (m_SphereMaterial)
                 UnityObjectUtils.Destroy(m_SphereMaterial);
 
@@ -832,7 +838,8 @@ namespace Unity.EditorXR.Workspaces
             var currentVelocity = 0f;
             const float kDuration = 1f;
 
-            var targetScale = Vector3.one * k_IconPreviewScale;
+            var isPlaceableObject = data.type == AssetData.PrefabTypeString || data.type == AssetData.ModelTypeString;
+            var targetScale = Vector3.one * (isPlaceableObject ? k_IconPreviewScale : k_AssignmentPreviewScale);
             var pivotOffset = Vector3.zero;
             var rotationOffset = Quaternion.AngleAxis(30, Vector3.right);
             if (m_PreviewObjectClone)

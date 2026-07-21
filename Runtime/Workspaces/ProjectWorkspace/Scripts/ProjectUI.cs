@@ -1,9 +1,11 @@
+using System;
 using Unity.EditorXR.Handles;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace Unity.EditorXR.Workspaces
 {
-    sealed class ProjectUI : MonoBehaviour
+    sealed class ProjectUI : MonoBehaviour, IScrollHandler
     {
 #pragma warning disable 649
         [SerializeField]
@@ -31,5 +33,14 @@ namespace Unity.EditorXR.Workspaces
         public LinearHandle assetScrollHandle { get { return m_AssetScrollHandle; } }
         public WorkspaceHighlight assetGridHighlight { get { return m_AssetGridHighlight; } }
         public WorkspaceHighlight folderPanelHighlight { get { return m_FolderPanelHighlight; } }
+
+        public event Action<PointerEventData> scrolled;
+
+        public void OnScroll(PointerEventData eventData)
+        {
+            var handler = scrolled;
+            if (handler != null)
+                handler(eventData);
+        }
     }
 }

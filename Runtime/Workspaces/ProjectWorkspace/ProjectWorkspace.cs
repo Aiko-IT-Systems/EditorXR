@@ -9,6 +9,7 @@ using Unity.EditorXR.UI;
 using Unity.EditorXR.Utilities;
 using Unity.XRTools.ModuleLoader;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace Unity.EditorXR.Workspaces
 {
@@ -22,6 +23,7 @@ namespace Unity.EditorXR.Workspaces
 
         const float k_MinScale = 0.04f;
         const float k_MaxScale = 0.09f;
+        const float k_ThumbstickScrollSpeed = 0.4f;
 
         static readonly Vector3 k_MinBounds = new Vector3(MinBounds.x, k_YBounds, 0.5f);
         static readonly Vector3 k_CustomStartingBounds = new Vector3(0.8f, k_YBounds, 0.5f);
@@ -116,6 +118,7 @@ namespace Unity.EditorXR.Workspaces
 
             var content = EditorXRUtils.Instantiate(m_ContentPrefab, m_WorkspaceUI.sceneContainer, false);
             m_ProjectUI = content.GetComponent<ProjectUI>();
+            m_ProjectUI.scrolled += OnThumbstickScroll;
             foreach (var behavior in content.GetComponentsInChildren<MonoBehaviour>(true))
             {
                 this.InjectFunctionalitySingle(behavior);
@@ -279,6 +282,32 @@ namespace Unity.EditorXR.Workspaces
                 m_ProjectUI.folderListView.OnScrollStarted();
             else if (handle == m_ProjectUI.assetScrollHandle)
                 m_ProjectUI.assetGridView.OnScrollStarted();
+        }
+
+        void OnThumbstickScroll(PointerEventData eventData)
+        {
+            if (eventData == null || Mathf.Approximately(eventData.scrollDelta.y, 0f))
+                return;
+
+            var target = eventData.pointerCurrentRaycast.gameObject;
+            var targetTransform = target ? target.transform : null;
+            var folderList = m_ProjectUI.folderListView;
+            var assetGrid = m_ProjectUI.assetGridView;
+            var scrollFolder = targetTransform && targetTransform.IsChildOf(folderList.transform);
+
+            var delta = eventData.scrollDelta.y * k_ThumbstickScrollSpeed * Time.unscaledDeltaTime;
+            if (scrollFolder)
+            {
+                folderList.OnScrollStarted();
+                folderList.scrollOffset += delta;
+                folderList.OnScrollEnded();
+            }
+            else
+            {
+                assetGrid.OnScrollStarted();
+                assetGrid.scrollOffset += delta;
+                assetGrid.OnScrollEnded();
+            }
         }
 
         void OnScrollDragging(BaseHandle handle, HandleEventData eventData)

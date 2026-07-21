@@ -125,10 +125,11 @@ namespace Unity.EditorXR.Core
                     UnityObjectUtils.Destroy(behavior);
 
                 var spatialMenu = device.spatialMenu;
-                this.DisconnectInterfaces(spatialMenu, rayOrigin);
-                behavior = spatialMenu;
-                if (behavior)
-                    UnityObjectUtils.Destroy(behavior);
+                if (spatialMenu)
+                {
+                    this.DisconnectInterfaces(spatialMenu, rayOrigin);
+                    UnityObjectUtils.Destroy(spatialMenu);
+                }
 
                 foreach (var menu in device.alternateMenus.ToList())
                 {
@@ -340,12 +341,8 @@ namespace Unity.EditorXR.Core
                 toolsMenu.setButtonForType(typeof(IMainMenu), null);
                 toolsMenu.setButtonForType(typeof(SelectionTool), selectionToolData != null ? selectionToolData.icon : null);
 
-                var spatialMenu = EditorXRUtils.AddComponent<SpatialMenu>(gameObject);
-                this.ConnectInterfaces(spatialMenu, rayOrigin);
-                this.InjectFunctionalitySingle(spatialMenu);
-                spatialMenu.controllerRole = GetControllerRole(device.node);
-                spatialMenu.Setup();
-                device.spatialMenu = spatialMenu;
+                // The role-based hand menus replace the legacy thumbstick spatial wheel.
+                device.spatialMenu = null;
             }
 
 #if UNITY_EDITOR

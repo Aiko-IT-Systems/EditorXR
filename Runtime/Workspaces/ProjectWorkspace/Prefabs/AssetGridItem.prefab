@@ -293,7 +293,7 @@ MonoBehaviour:
     type: 2}
   m_Icon: {fileID: 0}
   m_PreviewObjectTransform: {fileID: 0}
-  m_IncludeRaySelectForDrop: 0
+  m_IncludeRaySelectForDrop: 1
 --- !u!65 &65000014189498628
 BoxCollider:
   m_ObjectHideFlags: 0

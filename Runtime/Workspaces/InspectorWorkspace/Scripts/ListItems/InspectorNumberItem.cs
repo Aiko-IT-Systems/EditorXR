@@ -68,7 +68,7 @@ namespace Unity.EditorXR.Workspaces
 #if UNITY_EDITOR
             // Do not increment undo group because NumericInputField does it for us
             if (SetValueIfPossible(input))
-                data.serializedObject.ApplyModifiedProperties();
+                FinalizeModifications(false);
 #endif
         }
 

@@ -25,7 +25,7 @@ namespace Unity.EditorXR.Workspaces
                 m_InputFields[i].onValueChanged.AddListener(value =>
                 {
                     if (SetValue(value, index))
-                        data.serializedObject.ApplyModifiedProperties();
+                        FinalizeModifications(false);
                 });
             }
 #endif

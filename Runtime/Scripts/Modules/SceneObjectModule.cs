@@ -24,8 +24,13 @@ namespace Unity.EditorXR.Modules
 
         public void PlaceSceneObject(Transform obj, Vector3 targetScale)
         {
-            if (!TryPlaceObjectInMiniWorld(obj, targetScale))
-                EditorMonoBehaviour.instance.StartCoroutine(PlaceSceneObjectCoroutine(obj, targetScale));
+            if (TryPlaceObjectInMiniWorld(obj, targetScale))
+            {
+                RegisterPlacedObject(obj.gameObject);
+                return;
+            }
+
+            EditorMonoBehaviour.instance.StartCoroutine(PlaceSceneObjectCoroutine(obj, targetScale));
         }
 
         public void DeleteSceneObject(GameObject sceneObject)
@@ -98,10 +103,17 @@ namespace Unity.EditorXR.Modules
             Selection.activeGameObject = go;
 
             this.AddToSpatialHash(go);
+            RegisterPlacedObject(go);
 
 #if UNITY_EDITOR
             UnityEditor.Undo.IncrementCurrentGroup();
 #endif
+        }
+
+        static void RegisterPlacedObject(GameObject gameObject)
+        {
+            using (AuthoringSessionMethods.beginScope("Place Scene Object"))
+                AuthoringSessionMethods.registerCreatedHierarchy(gameObject);
         }
 
         public void PlaceSceneObjects(Transform[] transforms, Vector3[] targetPositionOffsets, Quaternion[] targetRotations, Vector3[] targetScales)

@@ -69,11 +69,19 @@ namespace Unity.EditorXR.Workspaces
 #endif
         }
 
-        protected void FinalizeModifications()
+        protected void FinalizeModifications(bool incrementUndoGroup = true)
         {
 #if UNITY_EDITOR
-            UnityEditor.Undo.IncrementCurrentGroup();
-            data.serializedObject.ApplyModifiedProperties();
+            var serializedObject = data.serializedObject;
+            using (AuthoringSessionMethods.beginScope("Modify Inspector Property"))
+            {
+                foreach (var target in serializedObject.targetObjects)
+                    AuthoringSessionMethods.recordObject(target);
+
+                if (incrementUndoGroup)
+                    UnityEditor.Undo.IncrementCurrentGroup();
+                serializedObject.ApplyModifiedProperties();
+            }
 #endif
         }
     }

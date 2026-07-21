@@ -149,8 +149,8 @@ namespace Unity.EditorXR.Utilities
 
         internal static Renderer AssignMaterial(GameObject go, AssetData data)
         {
-            var renderer = go.GetComponent<Renderer>();
-            if (renderer != null)
+            var renderers = go.GetComponentsInChildren<Renderer>(true);
+            foreach (var renderer in renderers)
             {
 #if UNITY_EDITOR
                 RecordObject(renderer, k_AssignMaterialUndo);
@@ -158,7 +158,7 @@ namespace Unity.EditorXR.Utilities
                 renderer.sharedMaterial = (Material)data.asset;
             }
 
-            return renderer;
+            return renderers.Length > 0 ? renderers[0] : null;
         }
 
         internal static void AssignMaterialAction(GameObject go, AssetData data)
@@ -196,15 +196,14 @@ namespace Unity.EditorXR.Utilities
 
         internal static PhysicMaterial AssignPhysicMaterial(GameObject go, AssetData data)
         {
-            var collider = go.GetComponent<Collider>();
-            if (collider != null)
+            var colliders = go.GetComponentsInChildren<Collider>(true);
+            var material = (PhysicMaterial)data.asset;
+            foreach (var collider in colliders)
             {
-                var material = (PhysicMaterial)data.asset;
                 AssignPhysicMaterial(collider, material);
-                return collider.material;
             }
 
-            return null;
+            return colliders.Length > 0 ? colliders[0].sharedMaterial : null;
         }
 
         internal static void AssignPhysicMaterialAction(GameObject go, AssetData data)
@@ -217,7 +216,7 @@ namespace Unity.EditorXR.Utilities
 #if UNITY_EDITOR
             RecordObject(collider, k_AssignPhysicMaterialUndo);
 #endif
-            collider.material = material;
+            collider.sharedMaterial = material;
         }
 
         internal static Font AssignFontOnChildren(GameObject go, AssetData data)

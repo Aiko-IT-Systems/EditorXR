@@ -469,7 +469,8 @@ namespace Unity.EditorXR.Workspaces
                     // avoid checking every object the selector passes over with a short delay
                     if (time - m_LastDragSelectionChange > k_CheckAssignDelayTime)
                     {
-                        var assignable = CheckAssignable(selection);
+                        var checkChildren = data.type == "Material" || data.type == "PhysicMaterial";
+                        var assignable = CheckAssignable(selection, checkChildren);
                         SetAssignableHighlight(selection, rayOrigin, assignable);
 
                         if (assignable)
@@ -487,7 +488,7 @@ namespace Unity.EditorXR.Workspaces
             m_SelectionRenderers.Clear();
             m_SelectionOriginalMaterials.Clear();
 
-            selection.GetComponentsInChildren(m_SelectionRenderers);
+            selection.GetComponentsInChildren(true, m_SelectionRenderers);
 
             var material = (Material)data.asset;
             foreach (var renderer in m_SelectionRenderers)
@@ -548,7 +549,7 @@ namespace Unity.EditorXR.Workspaces
             {
                 foreach (Type t in m_AssignmentDependencyTypes)
                 {
-                    if (go.GetComponentInChildren(t) != null)
+                    if (go.GetComponentInChildren(t, true) != null)
                     {
                         m_ObjectAssignmentChecks[go.GetInstanceID()] = Time.time;
                         return true;
@@ -579,10 +580,11 @@ namespace Unity.EditorXR.Workspaces
                     if (previewObjectTransform)
                     {
 #if UNITY_EDITOR
-                        UnityEditor.Undo.RegisterCreatedObjectUndo(previewObjectTransform.gameObject, "Place Scene Object");
+                        if (!AuthoringSessionMethods.isSessionActive())
+                            UnityEditor.Undo.RegisterCreatedObjectUndo(previewObjectTransform.gameObject, "Place Scene Object");
 #endif
-                        AuthoringSessionMethods.registerCreatedHierarchy(previewObjectTransform.gameObject);
                         this.PlaceSceneObject(previewObjectTransform, m_PreviewPrefabScale);
+                        AuthoringSessionMethods.registerCreatedHierarchy(previewObjectTransform.gameObject);
                     }
                     else
                     {
@@ -665,7 +667,8 @@ namespace Unity.EditorXR.Workspaces
             this.AddToSpatialHash(go);
 
 #if UNITY_EDITOR
-            UnityEditor.Undo.RegisterCreatedObjectUndo(go, "Project Workspace");
+            if (!AuthoringSessionMethods.isSessionActive())
+                UnityEditor.Undo.RegisterCreatedObjectUndo(go, "Project Workspace");
 #endif
             AuthoringSessionMethods.registerCreatedHierarchy(go);
         }

@@ -70,12 +70,12 @@ namespace Unity.EditorXR.Workspaces
                 m_CenterFields[i].onValueChanged.AddListener(value =>
                 {
                     if (SetValue(value, index, true))
-                        data.serializedObject.ApplyModifiedProperties();
+                        FinalizeModifications(false);
                 });
                 m_SizeFields[i].onValueChanged.AddListener(value =>
                 {
                     if (SetValue(value, index))
-                        data.serializedObject.ApplyModifiedProperties();
+                        FinalizeModifications(false);
                 });
             }
 #endif
@@ -176,7 +176,6 @@ namespace Unity.EditorXR.Workspaces
 
                 UpdateInputFields();
                 FinalizeModifications();
-                data.serializedObject.ApplyModifiedProperties();
             }
 
             if (dropObject is Vector2 || dropObject is Vector3 || dropObject is Vector4)
@@ -194,7 +193,6 @@ namespace Unity.EditorXR.Workspaces
 
                 UpdateInputFields();
                 FinalizeModifications();
-                data.serializedObject.ApplyModifiedProperties();
             }
 #endif
         }

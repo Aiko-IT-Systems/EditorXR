@@ -1,5 +1,6 @@
 using TMPro;
 using Unity.EditorXR.Data;
+using Unity.EditorXR.Interfaces;
 using UnityEngine;
 using UnityEngine.UI;
 using Button = Unity.EditorXR.UI.Button;
@@ -76,10 +77,14 @@ namespace Unity.EditorXR.Workspaces
             var target = serializedObject.targetObject;
             if (value != (EditorUtility.GetObjectEnabled(target) == 1))
             {
-                EditorUtility.SetObjectEnabled(target, value);
+                using (AuthoringSessionMethods.beginScope("Toggle Inspector Component"))
+                {
+                    AuthoringSessionMethods.recordObject(target);
+                    EditorUtility.SetObjectEnabled(target, value);
 
-                UnityEditor.Undo.IncrementCurrentGroup();
-                serializedObject.ApplyModifiedProperties();
+                    UnityEditor.Undo.IncrementCurrentGroup();
+                    serializedObject.ApplyModifiedProperties();
+                }
             }
 #endif
         }

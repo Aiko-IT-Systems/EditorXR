@@ -187,7 +187,18 @@ namespace Unity.EditorXR.Authoring
             if (!root)
                 return;
 
-            EditorUndo.RegisterCreatedObjectUndo(root, s_ScopeLabel);
+            if (sessionActive && root.transform.parent == null
+                && !s_Data.scenePaths.Any(path => string.Equals(path, root.scene.path,
+                    StringComparison.OrdinalIgnoreCase)))
+            {
+                var authoringScene = s_Data.scenePaths.Select(AuthoringSnapshotUtility.FindLoadedScene)
+                    .FirstOrDefault(scene => scene.IsValid());
+                if (authoringScene.IsValid())
+                    SceneManager.MoveGameObjectToScene(root, authoringScene);
+            }
+
+            if (!sessionActive || !s_CreatedRoots.Contains(root.GetInstanceID()))
+                EditorUndo.RegisterCreatedObjectUndo(root, s_ScopeLabel);
             TrackCreatedRoot(root);
         }
 

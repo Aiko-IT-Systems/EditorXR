@@ -34,12 +34,12 @@ namespace Unity.EditorXR.Workspaces
                 m_CenterFields[i].onValueChanged.AddListener(value =>
                 {
                     if (SetValue(value, index, true))
-                        data.serializedObject.ApplyModifiedProperties();
+                        FinalizeModifications(false);
                 });
                 m_ExtentsFields[i].onValueChanged.AddListener(value =>
                 {
                     if (SetValue(value, index))
-                        data.serializedObject.ApplyModifiedProperties();
+                        FinalizeModifications(false);
                 });
             }
 #endif

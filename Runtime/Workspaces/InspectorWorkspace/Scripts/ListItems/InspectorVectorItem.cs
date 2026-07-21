@@ -90,7 +90,7 @@ namespace Unity.EditorXR.Workspaces
                 m_InputFields[i].onValueChanged.AddListener(value =>
                 {
                     if (SetValue(value, index))
-                        data.serializedObject.ApplyModifiedProperties();
+                        FinalizeModifications(false);
                 });
             }
 #endif
@@ -225,8 +225,8 @@ namespace Unity.EditorXR.Workspaces
                         break;
                     case SerializedPropertyType.Vector4:
                         var vector4 = m_SerializedProperty.vector4Value;
-                        vector3.x = vector2.x;
-                        vector3.y = vector2.y;
+                        vector4.x = vector2.x;
+                        vector4.y = vector2.y;
                         m_SerializedProperty.vector4Value = vector4;
                         break;
                     case SerializedPropertyType.Quaternion:

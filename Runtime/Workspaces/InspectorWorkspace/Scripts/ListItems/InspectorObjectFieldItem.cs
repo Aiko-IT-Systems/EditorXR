@@ -115,7 +115,12 @@ namespace Unity.EditorXR.Workspaces
 
         bool IsAssignable(Object obj)
         {
-            return obj == null || obj.GetType().IsAssignableFrom(m_ObjectType);
+            return IsAssignable(m_ObjectType, obj);
+        }
+
+        internal static bool IsAssignable(Type expectedType, Object obj)
+        {
+            return obj == null || expectedType == null || expectedType.IsInstanceOfType(obj);
         }
     }
 #else

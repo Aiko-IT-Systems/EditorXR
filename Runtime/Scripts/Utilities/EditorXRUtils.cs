@@ -2,6 +2,7 @@ using System;
 using Unity.XRTools.Utils;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.UI;
 using UnityObject = UnityEngine.Object;
 
 namespace Unity.EditorXR.Utilities
@@ -58,8 +59,63 @@ namespace Unity.EditorXR.Utilities
 
             go.SetHideFlagsRecursively(hideFlags);
 
+#if UNITY_EDITOR
+            if (Application.isPlaying)
+                IsolatePackageMaterials(go);
+#endif
+
             return go;
         }
+
+#if UNITY_EDITOR
+        static void IsolatePackageMaterials(GameObject root)
+        {
+            var clones = new System.Collections.Generic.Dictionary<Material, Material>();
+            foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                var materials = renderer.sharedMaterials;
+                var changed = false;
+                for (var i = 0; i < materials.Length; ++i)
+                {
+                    var clone = GetPackageMaterialClone(materials[i], clones);
+                    if (clone == materials[i])
+                        continue;
+                    materials[i] = clone;
+                    changed = true;
+                }
+
+                if (changed)
+                    renderer.sharedMaterials = materials;
+            }
+
+            foreach (var graphic in root.GetComponentsInChildren<Graphic>(true))
+            {
+                var material = graphic.material;
+                var clone = GetPackageMaterialClone(material, clones);
+                if (clone != material)
+                    graphic.material = clone;
+            }
+        }
+
+        static Material GetPackageMaterialClone(Material material,
+            System.Collections.Generic.IDictionary<Material, Material> clones)
+        {
+            if (!material)
+                return material;
+
+            var path = AssetDatabase.GetAssetPath(material);
+            if (!path.StartsWith("Packages/com.unity.editorxr/", StringComparison.OrdinalIgnoreCase))
+                return material;
+
+            Material clone;
+            if (clones.TryGetValue(material, out clone))
+                return clone;
+
+            clone = new Material(material) { hideFlags = HideFlags.HideAndDontSave };
+            clones.Add(material, clone);
+            return clone;
+        }
+#endif
 
         public static T CreateGameObjectWithComponent<T>(Transform parent = null, bool worldPositionStays = true,
             bool runInEditMode = true)

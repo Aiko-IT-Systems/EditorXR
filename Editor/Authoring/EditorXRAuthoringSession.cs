@@ -26,10 +26,12 @@ namespace Unity.EditorXR.Authoring
 
         static AuthoringRecoveryData s_Data;
         static readonly Dictionary<int, string> s_ExistingInstanceIds = new Dictionary<int, string>();
+        static readonly HashSet<string> s_BaselineIds = new HashSet<string>();
         static readonly Dictionary<string, HashSet<string>> s_TrackedProperties = new Dictionary<string, HashSet<string>>();
         static readonly HashSet<string> s_TrackedGameObjects = new HashSet<string>();
         static readonly HashSet<int> s_CreatedRoots = new HashSet<int>();
         static readonly Dictionary<int, string> s_CreatedRootTokens = new Dictionary<int, string>();
+        static readonly HashSet<int> s_HandledDestroyedInstances = new HashSet<int>();
         static readonly HashSet<string> s_Deletions = new HashSet<string>();
         static readonly List<AuthoringDiagnostic> s_Diagnostics = new List<AuthoringDiagnostic>();
 
@@ -195,6 +197,7 @@ namespace Unity.EditorXR.Authoring
                 return;
 
             TrackDeletion(root);
+            s_HandledDestroyedInstances.Add(root.GetInstanceID());
             EditorUndo.DestroyObjectImmediate(root);
         }
 
@@ -283,7 +286,7 @@ namespace Unity.EditorXR.Authoring
             for (var i = 0; i < SceneManager.sceneCount; ++i)
             {
                 var scene = SceneManager.GetSceneAt(i);
-                if (scene.isLoaded && !string.IsNullOrEmpty(scene.path))
+                if (scene.isLoaded && scene.path.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
                     paths.Add(scene.path);
             }
 
@@ -293,6 +296,7 @@ namespace Unity.EditorXR.Authoring
         static void BuildBaseline()
         {
             s_Data.baseline.Clear();
+            s_BaselineIds.Clear();
             foreach (var scenePath in s_Data.scenePaths)
             {
                 var scene = AuthoringSnapshotUtility.FindLoadedScene(scenePath);
@@ -312,6 +316,7 @@ namespace Unity.EditorXR.Authoring
             string id;
             if (AuthoringSnapshotUtility.TryGetGlobalId(target, out id))
             {
+                s_BaselineIds.Add(id);
                 s_Data.baseline.Add(new AuthoringBaselineEntry
                 {
                     globalObjectId = id,
@@ -449,6 +454,9 @@ namespace Unity.EditorXR.Authoring
                 return;
             }
 
+            if (!s_BaselineIds.Contains(id))
+                return;
+
             HashSet<string> paths;
             if (!s_TrackedProperties.TryGetValue(id, out paths))
             {
@@ -504,6 +512,9 @@ namespace Unity.EditorXR.Authoring
                 return;
             }
 
+            if (!s_BaselineIds.Contains(id))
+                return;
+
             s_TrackedGameObjects.Add(id);
             if (includeTransform)
             {
@@ -554,19 +565,24 @@ namespace Unity.EditorXR.Authoring
             }
 
             string id;
-            if (AuthoringSnapshotUtility.TryGetGlobalId(root, out id))
-            {
-                s_Deletions.Add(id);
-                s_SnapshotDirty = true;
-            }
-            else
+            if (!AuthoringSnapshotUtility.TryGetGlobalId(root, out id))
             {
                 AddDiagnostic(true, "Deleted hierarchy had no stable GlobalObjectId: " + root.name);
+                return;
             }
+
+            if (!s_BaselineIds.Contains(id))
+                return;
+
+            s_Deletions.Add(id);
+            s_SnapshotDirty = true;
         }
 
         static void TrackDestroyedInstance(int instanceId)
         {
+            if (s_HandledDestroyedInstances.Remove(instanceId))
+                return;
+
             if (s_CreatedRoots.Remove(instanceId))
             {
                 s_SnapshotDirty = true;
@@ -578,11 +594,6 @@ namespace Unity.EditorXR.Authoring
             {
                 s_Deletions.Add(id);
                 s_SnapshotDirty = true;
-            }
-            else
-            {
-                AddDiagnostic(true,
-                    "A destroyed hierarchy could not be matched to the authoring baseline (instance " + instanceId + ").");
             }
         }
 
@@ -626,7 +637,7 @@ namespace Unity.EditorXR.Authoring
                 return;
 
             var changeSet = new AuthoringChangeSet();
-            changeSet.deletions.AddRange(s_Deletions);
+            changeSet.deletions.AddRange(s_Deletions.Where(s_BaselineIds.Contains));
             changeSet.diagnostics.AddRange(s_Diagnostics);
 
             var createdIds = new Dictionary<int, string>();
@@ -654,6 +665,8 @@ namespace Unity.EditorXR.Authoring
 
             foreach (var gameObjectId in s_TrackedGameObjects)
             {
+                if (!s_BaselineIds.Contains(gameObjectId))
+                    continue;
                 var gameObject = AuthoringSnapshotUtility.ResolveGlobalId(gameObjectId) as GameObject;
                 if (!gameObject || s_Deletions.Contains(gameObjectId))
                     continue;
@@ -662,6 +675,8 @@ namespace Unity.EditorXR.Authoring
 
             foreach (var pair in s_TrackedProperties)
             {
+                if (!s_BaselineIds.Contains(pair.Key))
+                    continue;
                 var target = AuthoringSnapshotUtility.ResolveGlobalId(pair.Key);
                 if (!target)
                     continue;
@@ -1001,6 +1016,8 @@ namespace Unity.EditorXR.Authoring
             var serializedObject = new SerializedObject(target);
             foreach (var property in properties)
             {
+                if (!AuthoringSnapshotUtility.IsSafePropertyPath(property.propertyPath))
+                    continue;
                 if (serializedObject.FindProperty(property.propertyPath) == null)
                     diagnostics.Add(new AuthoringDiagnostic(true,
                         string.Format("'{0}' no longer has property '{1}'.", target.name, property.propertyPath)));
@@ -1198,6 +1215,7 @@ namespace Unity.EditorXR.Authoring
             s_TrackedGameObjects.Clear();
             s_CreatedRoots.Clear();
             s_CreatedRootTokens.Clear();
+            s_HandledDestroyedInstances.Clear();
             s_Deletions.Clear();
             s_Diagnostics.Clear();
             s_ScopeDepth = 0;
@@ -1247,6 +1265,9 @@ namespace Unity.EditorXR.Authoring
             try
             {
                 s_Data = AuthoringRecoverySerializer.FromJson(File.ReadAllText(k_RecoveryPath));
+                RebuildBaselineIds();
+                if (UpgradeRecoveryData())
+                    WriteRecovery();
             }
             catch (Exception exception)
             {
@@ -1255,9 +1276,59 @@ namespace Unity.EditorXR.Authoring
             }
         }
 
+        static void RebuildBaselineIds()
+        {
+            s_BaselineIds.Clear();
+            if (s_Data == null)
+                return;
+
+            foreach (var entry in s_Data.baseline)
+            {
+                if (!string.IsNullOrEmpty(entry.globalObjectId))
+                    s_BaselineIds.Add(entry.globalObjectId);
+            }
+        }
+
+        static bool UpgradeRecoveryData()
+        {
+            if (s_Data == null || s_Data.version >= AuthoringRecoveryData.CurrentVersion)
+                return false;
+            if (s_Data.version != 1)
+                return false;
+
+            s_Data.changeSet.deletions.RemoveAll(id => !s_BaselineIds.Contains(id));
+            s_Data.changeSet.updates.RemoveAll(update => !s_BaselineIds.Contains(update.targetGlobalObjectId));
+            foreach (var update in s_Data.changeSet.updates)
+                update.properties.RemoveAll(property => !AuthoringSnapshotUtility.IsSafePropertyPath(property.propertyPath));
+            foreach (var creation in s_Data.changeSet.creations)
+                RemoveUnsafeCreatedProperties(creation.root);
+
+            s_Data.changeSet.diagnostics.RemoveAll(diagnostic =>
+                diagnostic != null && !string.IsNullOrEmpty(diagnostic.message)
+                && (diagnostic.message.StartsWith("A destroyed hierarchy could not be matched", StringComparison.Ordinal)
+                    || diagnostic.message.StartsWith("Deleted target can no longer be resolved", StringComparison.Ordinal)
+                    || diagnostic.message.StartsWith("Updated target can no longer be resolved", StringComparison.Ordinal)));
+            s_Data.version = AuthoringRecoveryData.CurrentVersion;
+            s_Data.scriptFingerprint = ComputeScriptFingerprint();
+            return true;
+        }
+
+        static void RemoveUnsafeCreatedProperties(AuthoringCreatedNode node)
+        {
+            if (node == null)
+                return;
+
+            foreach (var component in node.components)
+                component.properties.RemoveAll(property =>
+                    !AuthoringSnapshotUtility.IsSafePropertyPath(property.propertyPath));
+            foreach (var child in node.children)
+                RemoveUnsafeCreatedProperties(child);
+        }
+
         static void DiscardRecovery()
         {
             s_Data = null;
+            s_BaselineIds.Clear();
             ResetTracking();
             if (File.Exists(k_RecoveryPath))
                 File.Delete(k_RecoveryPath);

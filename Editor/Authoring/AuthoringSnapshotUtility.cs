@@ -11,6 +11,15 @@ namespace Unity.EditorXR.Authoring
     {
         const string k_ClientSimRoot = "__ClientSim";
 
+        static readonly string[] k_UnsafePropertyRoots =
+        {
+            "m_ObjectHideFlags",
+            "m_CorrespondingSourceObject",
+            "m_PrefabInstance",
+            "m_PrefabAsset",
+            "m_GameObject"
+        };
+
         internal static bool IsEligible(UnityEngine.Object target, ICollection<string> scenePaths, out string reason)
         {
             reason = null;
@@ -174,6 +183,9 @@ namespace Unity.EditorXR.Authoring
                         continue;
                     }
 
+                    if (!IsSafeProperty(property))
+                        continue;
+
                     CaptureProperty(property, target, createdObjectIds, diagnostics, result);
                 }
 
@@ -184,14 +196,24 @@ namespace Unity.EditorXR.Authoring
             var enterChildren = true;
             while (iterator.Next(enterChildren))
             {
-                enterChildren = true;
+                enterChildren = iterator.propertyType == SerializedPropertyType.Generic;
                 if (iterator.propertyPath == "m_Script")
+                {
+                    enterChildren = false;
                     continue;
+                }
 
                 if (iterator.propertyType == SerializedPropertyType.Generic)
                     continue;
 
+                if (!IsSafeProperty(iterator))
+                {
+                    enterChildren = false;
+                    continue;
+                }
+
                 CaptureProperty(iterator, target, createdObjectIds, diagnostics, result);
+                enterChildren = false;
             }
 
             return result;
@@ -290,6 +312,9 @@ namespace Unity.EditorXR.Authoring
             var serializedObject = new SerializedObject(target);
             foreach (var snapshot in properties)
             {
+                if (!IsSafePropertyPath(snapshot.propertyPath))
+                    continue;
+
                 if (serializedObject.FindProperty(snapshot.propertyPath) == null)
                 {
                     diagnostics.Add(new AuthoringDiagnostic(true,
@@ -317,8 +342,11 @@ namespace Unity.EditorXR.Authoring
             serializedObject.Update();
             foreach (var snapshot in properties)
             {
+                if (!IsSafePropertyPath(snapshot.propertyPath))
+                    continue;
+
                 var property = serializedObject.FindProperty(snapshot.propertyPath);
-                if (property == null)
+                if (property == null || !IsSafeProperty(property))
                     return false;
 
                 switch ((SerializedPropertyType)snapshot.propertyType)
@@ -393,6 +421,25 @@ namespace Unity.EditorXR.Authoring
             if (PrefabUtility.IsPartOfPrefabInstance(target))
                 PrefabUtility.RecordPrefabInstancePropertyModifications(target);
             return true;
+        }
+
+        internal static bool IsSafePropertyPath(string propertyPath)
+        {
+            if (string.IsNullOrEmpty(propertyPath))
+                return false;
+
+            foreach (var root in k_UnsafePropertyRoots)
+            {
+                if (propertyPath == root || propertyPath.StartsWith(root + ".", StringComparison.Ordinal))
+                    return false;
+            }
+
+            return propertyPath != "m_Script";
+        }
+
+        static bool IsSafeProperty(SerializedProperty property)
+        {
+            return property != null && property.editable && IsSafePropertyPath(property.propertyPath);
         }
 
         internal static string GetScenePath(UnityEngine.Object target)

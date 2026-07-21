@@ -111,6 +111,21 @@ namespace Unity.EditorXR.Tests.Authoring
                 restored.changeSet.creations[0].root.localRotation), 0.001f);
         }
 
+        [Test]
+        public void CaptureProperties_DoesNotCaptureNativeOwnershipFields()
+        {
+            var gameObject = CreateGameObject("Primitive");
+            var collider = gameObject.AddComponent<BoxCollider>();
+            var diagnostics = new List<AuthoringDiagnostic>();
+
+            var properties = AuthoringSnapshotUtility.CaptureProperties(collider, null,
+                new Dictionary<int, string>(), diagnostics);
+
+            Assert.IsFalse(properties.Exists(property => property.propertyPath.StartsWith("m_GameObject")));
+            Assert.IsFalse(properties.Exists(property => property.propertyPath.StartsWith("m_Prefab")));
+            Assert.IsTrue(properties.Exists(property => property.propertyPath == "m_IsTrigger"));
+        }
+
         GameObject CreateGameObject(string name)
         {
             var gameObject = new GameObject(name);

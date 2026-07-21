@@ -105,8 +105,9 @@ namespace Unity.EditorXR.Utilities
 
             if (!File.Exists(physicalDestinationPath))
             {
-                if (!AssetDatabase.CopyAsset(sourcePath, destinationPath))
-                    return prefab;
+                File.Copy(physicalSourcePath, physicalDestinationPath);
+                AssetDatabase.ImportAsset(destinationPath,
+                    ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
             }
             else if (!FilesMatch(physicalSourcePath, physicalDestinationPath))
             {

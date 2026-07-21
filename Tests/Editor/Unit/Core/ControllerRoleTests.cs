@@ -93,11 +93,12 @@ namespace Unity.EditorXR.Tests
             try
             {
                 var workspace = go.AddComponent<ProjectWorkspace>();
-                Assert.Greater(EditorXRUtils.ApplyEditorDefaultReferences(workspace), 0);
-
                 var contentField = typeof(ProjectWorkspace).GetField("m_ContentPrefab",
                     System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
                 Assert.IsNotNull(contentField);
+                contentField.SetValue(workspace, null);
+
+                Assert.Greater(EditorXRUtils.ApplyEditorDefaultReferences(workspace), 0);
                 Assert.IsNotNull(contentField.GetValue(workspace));
             }
             finally

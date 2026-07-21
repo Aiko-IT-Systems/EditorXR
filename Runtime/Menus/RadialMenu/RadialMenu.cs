@@ -42,6 +42,8 @@ namespace Unity.EditorXR
 
         public event Action<Transform> itemWasSelected;
 
+        internal bool persistentOpen { get; set; }
+
         public Transform rayOrigin { private get; set; }
 
         public Transform menuOrigin { get; set; }
@@ -113,6 +115,7 @@ namespace Unity.EditorXR
             m_RadialMenuUI.actions = menuActions;
             this.ConnectInterfaces(m_RadialMenuUI); // Connect interfaces before performing setup on the UI
             m_RadialMenuUI.Setup();
+            m_RadialMenuUI.closeWhenSelectionEmpty = false;
             m_RadialMenuUI.buttonHovered += OnButtonHovered;
             m_RadialMenuUI.buttonClicked += OnButtonClicked;
 
@@ -151,10 +154,14 @@ namespace Unity.EditorXR
             {
                 this.Pulse(node, m_ReleasePulse);
 
-                m_RadialMenuUI.SelectionOccurred();
+                if (m_RadialMenuUI.SelectionOccurred())
+                {
+                    persistentOpen = false;
+                    menuHideFlags = m_MenuHideFlags | MenuHideFlags.Hidden;
 
-                if (itemWasSelected != null)
-                    itemWasSelected(rayOrigin);
+                    if (itemWasSelected != null)
+                        itemWasSelected(rayOrigin);
+                }
 
                 consumeControl(selectControl);
             }

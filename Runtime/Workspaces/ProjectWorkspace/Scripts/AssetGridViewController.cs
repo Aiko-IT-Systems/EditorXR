@@ -13,6 +13,8 @@ namespace Unity.EditorXR.Workspaces
     sealed class AssetGridViewController : EditorXRListViewController<AssetData, AssetGridItem, int>
     {
         const float k_PositionFollow = 0.4f;
+        const int k_MaxVisibleItems = 128;
+        const int k_MaxNewItemsPerFrame = 32;
 
 #pragma warning disable 649
         [SerializeField]
@@ -138,6 +140,8 @@ namespace Unity.EditorXR.Workspaces
         {
             var count = 0;
             var order = 0;
+            var visibleCount = 0;
+            var newItemsThisFrame = 0;
             foreach (var data in m_Data)
             {
                 if (m_NumPerRow == 0) // If the list is too narrow, display nothing
@@ -153,12 +157,29 @@ namespace Unity.EditorXR.Workspaces
                 }
 
                 var offset = count / m_NumPerRow * itemSize.z;
-                if (offset + scrollOffset < 0 || offset + scrollOffset > m_Size.z)
+                var isVisible = offset + scrollOffset >= 0 && offset + scrollOffset <= m_Size.z;
+                if (!isVisible || visibleCount >= k_MaxVisibleItems)
                     RecycleGridItem(data);
                 else
                 {
+                    if (!m_ListItems.ContainsKey(data.index))
+                    {
+                        if (newItemsThisFrame >= k_MaxNewItemsPerFrame)
+                        {
+                            count++;
+                            continue;
+                        }
+
+                        newItemsThisFrame++;
+                    }
+
                     var ignored = true;
-                    UpdateVisibleItem(data, order++, count, ref ignored);
+                    var item = UpdateVisibleItem(data, order, count, ref ignored);
+                    if (item)
+                    {
+                        order++;
+                        visibleCount++;
+                    }
                 }
 
                 count++;

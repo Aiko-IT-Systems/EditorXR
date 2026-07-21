@@ -117,7 +117,7 @@ namespace Unity.EditorXR
                             slot.pressed = false;
                     }
 
-                    if (m_HighlightedButton == null)
+                    if (m_HighlightedButton == null && closeWhenSelectionEmpty)
                     {
                         // No button was selected on the Radial Menu. Close the radial menu, and deselect.
                         Selection.activeGameObject = null;
@@ -128,6 +128,8 @@ namespace Unity.EditorXR
         }
 
         bool m_PressedDown;
+
+        public bool closeWhenSelectionEmpty { private get; set; } = true;
 
         public Vector2 buttonInputDirection
         {
@@ -360,13 +362,17 @@ namespace Unity.EditorXR
             m_VisibilityCoroutine = null;
         }
 
-        public void SelectionOccurred()
+        public bool SelectionOccurred()
         {
-            if (m_HighlightedButton != null)
-                m_HighlightedButton.button.onClick.Invoke();
+            if (m_HighlightedButton == null)
+                return false;
+
+            m_HighlightedButton.button.onClick.Invoke();
 
             if (buttonClicked != null)
                 buttonClicked();
+
+            return true;
         }
 
         void OnButtonHovered()

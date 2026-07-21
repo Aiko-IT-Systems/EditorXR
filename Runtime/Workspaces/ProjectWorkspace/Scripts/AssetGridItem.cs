@@ -203,6 +203,7 @@ namespace Unity.EditorXR.Workspaces
 
         public override void Setup(AssetData listData, bool firstTime = false)
         {
+            HydrateReferences();
             base.Setup(listData, firstTime);
 
             m_PreviewCoroutine = null;
@@ -235,6 +236,49 @@ namespace Unity.EditorXR.Workspaces
             InstantiatePreview();
 
             m_Text.text = listData.name;
+        }
+
+        void HydrateReferences()
+        {
+            if (!m_Handle)
+                m_Handle = GetComponent<BaseHandle>();
+
+            var panel = transform.Find("Panel");
+            if (panel)
+            {
+                if (!m_TextPanel)
+                    m_TextPanel = panel.GetComponent<Image>();
+
+                if (!m_Text)
+                    m_Text = panel.GetComponentInChildren<TextMeshProUGUI>(true);
+            }
+
+            if (!m_Cube)
+            {
+                var cube = transform.Find("Cube");
+                if (cube)
+                    m_Cube = cube.GetComponent<Renderer>();
+            }
+
+            if (!m_Sphere)
+            {
+                var sphere = transform.Find("Sphere");
+                if (sphere)
+                    m_Sphere = sphere.GetComponent<Renderer>();
+            }
+
+#if UNITY_EDITOR
+            if (!m_PositiveAssignmentHighlightMaterial)
+                m_PositiveAssignmentHighlightMaterial = AssetDatabase.LoadAssetAtPath<Material>(
+                    "Packages/com.unity.editorxr/Runtime/Scripts/Modules/HighlightModule/AssetDropPositiveHighlightMaterial.mat");
+
+            if (!m_NegativeAssignmentHighlightMaterial)
+                m_NegativeAssignmentHighlightMaterial = AssetDatabase.LoadAssetAtPath<Material>(
+                    "Packages/com.unity.editorxr/Runtime/Scripts/Modules/HighlightModule/AssetDropNegativeHighlightMaterial.mat");
+#endif
+
+            if (!m_Text || !m_Handle || !m_TextPanel || !m_Cube || !m_Sphere)
+                throw new InvalidOperationException("AssetGridItem prefab is missing required UI references.");
         }
 
         public void UpdateTransforms(float scale)

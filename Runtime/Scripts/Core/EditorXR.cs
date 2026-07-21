@@ -50,6 +50,7 @@ namespace Unity.EditorXR.Core
         const HideFlags k_DefaultHideFlags = HideFlags.HideInHierarchy | HideFlags.DontSave;
         internal const string VRPlayerTag = "VRPlayer";
         const string k_PreserveLayout = "EditorXR.PreserveLayout";
+        const string k_CleanSessionDefaultsV1 = "EditorXR.CleanSessionDefaultsV1";
         const string k_IncludeInBuilds = "EditorXR.IncludeInBuilds";
         const string k_AuthoringHandLeft = "EditorXR.AuthoringHandLeft";
         const string k_ScaleSnappingEnabled = "EditorXR.ScaleSnappingEnabled";
@@ -59,7 +60,7 @@ namespace Unity.EditorXR.Core
 
         internal static bool preserveLayout
         {
-            get { return EditorPrefs.GetBool(k_PreserveLayout, true); }
+            get { return EditorPrefs.GetBool(k_PreserveLayout, false); }
             set { EditorPrefs.SetBool(k_PreserveLayout, value); }
         }
 
@@ -105,6 +106,7 @@ namespace Unity.EditorXR.Core
         {
 #if UNITY_EDITOR
             EditorPrefs.DeleteKey(k_PreserveLayout);
+            EditorPrefs.DeleteKey(k_CleanSessionDefaultsV1);
             EditorPrefs.DeleteKey(k_IncludeInBuilds);
             EditorPrefs.DeleteKey(k_AuthoringHandLeft);
             EditorPrefs.DeleteKey(k_ScaleSnappingEnabled);
@@ -121,6 +123,15 @@ namespace Unity.EditorXR.Core
             if (!s_IsInitialized)
             {
                 s_IsInitialized = true;
+
+#if UNITY_EDITOR
+                if (!EditorPrefs.GetBool(k_CleanSessionDefaultsV1, false))
+                {
+                    preserveLayout = false;
+                    EditorXRToolModule.ResetPreferences();
+                    EditorPrefs.SetBool(k_CleanSessionDefaultsV1, true);
+                }
+#endif
 
 #if UNITY_EDITOR && !UNITY_2020_1_OR_NEWER
 #pragma warning disable 618

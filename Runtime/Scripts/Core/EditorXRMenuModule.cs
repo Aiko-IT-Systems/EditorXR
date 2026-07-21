@@ -264,6 +264,10 @@ namespace Unity.EditorXR.Core
                 foreach (var menu in alternateMenus)
                 {
                     var hideData = menuHideData[menu];
+                    var radialMenu = menu as RadialMenu;
+                    if (radialMenu != null && !radialMenu.persistentOpen)
+                        hideData.hideFlags |= MenuHideFlags.Hidden;
+
                     if ((hideData.hideFlags & MenuHideFlags.Hidden) == 0
                         && (alternateMenu == null || menu.priority >= alternateMenu.priority))
                         alternateMenu = menu;
@@ -527,10 +531,49 @@ namespace Unity.EditorXR.Core
 
         internal void UpdateAlternateMenuOnSelectionChanged(Transform rayOrigin)
         {
-            if (rayOrigin == null)
-                return;
+            // Radial menu visibility is explicitly controlled by the Authoring-hand toggle.
+        }
 
-            SetAlternateMenuVisibility(rayOrigin, Selection.gameObjects.Length > 0);
+        internal bool IsRadialMenuOpen(Transform rayOrigin)
+        {
+            var device = m_ToolModule.deviceData.FirstOrDefault(data => data.rayOrigin == rayOrigin);
+            if (device == null)
+                return false;
+
+            return device.alternateMenus.OfType<RadialMenu>().Any(menu => menu.persistentOpen);
+        }
+
+        internal bool ToggleRadialMenu(Transform rayOrigin)
+        {
+            var targetDevice = m_ToolModule.deviceData.FirstOrDefault(data => data.rayOrigin == rayOrigin);
+            if (targetDevice == null)
+                return false;
+
+            var targetMenu = targetDevice.alternateMenus.OfType<RadialMenu>().FirstOrDefault();
+            if (!targetMenu)
+                return false;
+
+            var opening = !targetMenu.persistentOpen;
+            foreach (var device in m_ToolModule.deviceData)
+            {
+                foreach (var radialMenu in device.alternateMenus.OfType<RadialMenu>())
+                {
+                    radialMenu.persistentOpen = false;
+                    var hideData = device.menuHideData[radialMenu];
+                    hideData.hideFlags |= MenuHideFlags.Hidden;
+                    radialMenu.menuHideFlags = hideData.hideFlags;
+                }
+            }
+
+            if (opening)
+            {
+                targetMenu.persistentOpen = true;
+                var hideData = targetDevice.menuHideData[targetMenu];
+                hideData.hideFlags &= ~MenuHideFlags.Hidden;
+                targetMenu.menuHideFlags = hideData.hideFlags;
+            }
+
+            return true;
         }
 
         internal void SetAlternateMenuVisibility(Transform rayOrigin, bool visible)
@@ -542,11 +585,14 @@ namespace Unity.EditorXR.Core
                     if (!(menu is IActionsMenu))
                         continue;
 
+                    var radialMenu = menu as RadialMenu;
+                    var showOnThisDevice = visible && (radialMenu == null || radialMenu.persistentOpen);
+
                     var menuHideFlags = deviceData.menuHideData;
 
                     // Set alternate menu visible on this rayOrigin and hide it on all others
                     var alternateMenuData = menuHideFlags[menu];
-                    if (deviceData.rayOrigin == rayOrigin && visible)
+                    if (deviceData.rayOrigin == rayOrigin && showOnThisDevice)
                         alternateMenuData.hideFlags &= ~MenuHideFlags.Hidden;
                     else
                         alternateMenuData.hideFlags |= MenuHideFlags.Hidden;

@@ -200,10 +200,10 @@ namespace Unity.EditorXR.Core
                     debugSettings.SetModuleHideFlags(showGameObjects ? hideFlags & ~HideFlags.HideInHierarchy : hideFlags | HideFlags.HideInHierarchy);
             }
 
-            // Preserve Layout
+            // Restore Previous Session
             {
-                const string title = "Preserve Layout";
-                const string tooltip = "Check this to preserve your layout and location in EditorXR";
+                const string title = "Restore Previous Session";
+                const string tooltip = "Reopen the previous viewer position and workspaces. Disabled by default to avoid stale or off-screen panels.";
                 EditorXR.preserveLayout = EditorGUILayout.Toggle(new GUIContent(title, tooltip), EditorXR.preserveLayout);
             }
 

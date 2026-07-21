@@ -341,31 +341,9 @@ namespace Unity.EditorXR.Core
                 toolsMenu.setButtonForType(typeof(IMainMenu), null);
                 toolsMenu.setButtonForType(typeof(SelectionTool), selectionToolData != null ? selectionToolData.icon : null);
 
-                var spatialMenu = EditorXRUtils.AddComponent<SpatialMenu>(gameObject);
-                this.ConnectInterfaces(spatialMenu, rayOrigin);
-                this.InjectFunctionalitySingle(spatialMenu);
-                spatialMenu.rayOrigin = rayOrigin;
-                spatialMenu.node = device.node;
-                spatialMenu.controllerRole = GetControllerRole(device.node);
-                spatialMenu.Setup();
-                device.spatialMenu = spatialMenu;
+                // The authoring-hand radial menu replaces the legacy spatial Actions/Workspaces/Tools panel.
+                device.spatialMenu = null;
             }
-
-#if UNITY_EDITOR
-            foreach (var device in deviceData)
-            {
-                if (device.proxy != proxy)
-                    continue;
-
-                var key = GetControllerRole(device.node) == ControllerRole.Authoring
-                    ? k_LastAuthoringTool : k_LastUtilityTool;
-                var type = Type.GetType(EditorPrefs.GetString(key, string.Empty));
-                bool companion;
-                if (type != null && !IsDefaultTool(type)
-                    && ToolSupportsRole(type, GetControllerRole(device.node), out companion))
-                    SelectTool(device.rayOrigin, type, false);
-            }
-#endif
 
             if (deviceInputModule != null)
                 deviceInputModule.UpdatePlayerHandleMaps();
@@ -563,16 +541,6 @@ namespace Unity.EditorXR.Core
 
 #if UNITY_EDITOR
             EditorXRAnalyticsEvents.ToolSelected.Send(new SelectToolArgs { label = toolType.Name });
-            if (result)
-            {
-                var selectedDevice = deviceData.FirstOrDefault(data => data.rayOrigin == rayOrigin);
-                if (selectedDevice != null)
-                {
-                    var key = GetControllerRole(selectedDevice.node) == ControllerRole.Authoring
-                        ? k_LastAuthoringTool : k_LastUtilityTool;
-                    EditorPrefs.SetString(key, toolType.AssemblyQualifiedName);
-                }
-            }
 #endif
             return result;
         }

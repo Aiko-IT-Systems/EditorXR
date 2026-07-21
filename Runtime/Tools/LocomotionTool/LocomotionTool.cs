@@ -340,9 +340,11 @@ namespace Unity.EditorXR.Tools
             var utility = utilityTool.m_LocomotionInput;
             var authoring = authoringTool.m_LocomotionInput;
             var commandHeld = utility.crawl.isHeld;
-            if (!commandHeld && authoring.reverse.wasJustPressed && Unity.EditorXR.SpatialMenu.persistentMenuOpen)
+            var menuModule = ModuleLoaderCore.instance.GetModule<EditorXRMenuModule>();
+            if (!commandHeld && authoring.reverse.wasJustPressed && menuModule != null
+                && menuModule.IsRadialMenuOpen(authoringTool.rayOrigin))
             {
-                var closed = Unity.EditorXR.SpatialMenu.TogglePersistent(authoringTool.rayOrigin);
+                var closed = menuModule.ToggleRadialMenu(authoringTool.rayOrigin);
                 if (closed)
                     consumeControl(authoring.reverse);
 
@@ -394,7 +396,7 @@ namespace Unity.EditorXR.Tools
             }
             else if (authoring.reverse.wasJustPressed)
             {
-                used = Unity.EditorXR.SpatialMenu.TogglePersistent(authoringTool.rayOrigin);
+                used = menuModule != null && menuModule.ToggleRadialMenu(authoringTool.rayOrigin);
                 if (used)
                     consumeControl(authoring.reverse);
             }

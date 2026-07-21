@@ -6,7 +6,8 @@
         "Unity.XRTools.Utils",
         "Unity.XRTools.Utils.Editor",
         "Unity.EditorXR.Interfaces",
-        "Unity.XRTools.ModuleLoader.Interfaces"
+        "Unity.XRTools.ModuleLoader.Interfaces",
+        "Unity.ListViewFramework"
     ],
     "optionalUnityReferences": [
         "TestAssemblies"

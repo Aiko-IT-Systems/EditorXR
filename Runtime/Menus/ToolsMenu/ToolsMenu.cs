@@ -13,7 +13,7 @@ using UnityEngine.InputNew;
 
 namespace Unity.EditorXR.Menus
 {
-    sealed class ToolsMenu : MonoBehaviour, IToolsMenu, IUsesConnectInterfaces, IInstantiateUI, IUsesControlHaptics,
+    sealed class ToolsMenu : MonoBehaviour, IToolsMenu, ITooltip, IUsesConnectInterfaces, IInstantiateUI, IUsesControlHaptics,
         IUsesViewerScale, IControlSpatialScrolling, IUsesControlSpatialHinting, IUsesRayVisibilitySettings, IUsesRayOrigin,
         IUsesRequestFeedback, IUsesFunctionalityInjection
     {
@@ -71,6 +71,8 @@ namespace Unity.EditorXR.Menus
         public bool ignoreActionMapInputLocking { get; private set; }
 
         public Transform rayOrigin { get; set; }
+        public ControllerRole controllerRole { get; set; }
+        public string tooltipText { get { return controllerRole + " Tools"; } }
 
         public bool mainMenuActivatorInteractable
         {
@@ -146,6 +148,8 @@ namespace Unity.EditorXR.Menus
 
             button.rayOrigin = rayOrigin;
             button.toolType = toolType; // Assign Tool Type before assigning order
+            if (toolType == typeof(IMainMenu))
+                button.tooltip = this;
             button.icon = toolType != typeof(IMainMenu) ? buttonIcon : m_MainMenuIcon;
             button.highlightSingleButton = highlightSingleButton;
             button.selectHighlightedButton = selectHighlightedButton;

@@ -159,6 +159,9 @@ namespace Unity.EditorXR.Tools
         public static void ApplyScale(ScaleTransformState[] states, Vector3 anchor, Quaternion frameRotation,
             Vector3 factors)
         {
+            if (!IsFinite(factors.x) || !IsFinite(factors.y) || !IsFinite(factors.z))
+                return;
+
             factors.x = Mathf.Max(k_MinDimension, factors.x);
             factors.y = Mathf.Max(k_MinDimension, factors.y);
             factors.z = Mathf.Max(k_MinDimension, factors.z);
@@ -236,6 +239,11 @@ namespace Unity.EditorXR.Tools
             if (timeConstant <= 0f)
                 return 1f;
             return 1f - Mathf.Exp(-Mathf.Max(0f, deltaTime) / timeConstant);
+        }
+
+        static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
         }
     }
 }

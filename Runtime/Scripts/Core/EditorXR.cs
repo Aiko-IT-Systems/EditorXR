@@ -109,6 +109,7 @@ namespace Unity.EditorXR.Core
             EditorPrefs.DeleteKey(k_AuthoringHandLeft);
             EditorPrefs.DeleteKey(k_ScaleSnappingEnabled);
             EditorPrefs.DeleteKey(k_ScaleSnapIncrement);
+            EditorXRToolModule.ResetPreferences();
             EditorPrefs.DeleteKey(SerializedPreferencesModule.SerializedPreferencesKey);
             ModuleLoaderDebugSettings.instance.SetModuleHideFlags(k_DefaultHideFlags);
 #endif

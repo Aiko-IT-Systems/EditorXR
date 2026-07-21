@@ -43,6 +43,9 @@ namespace Unity.EditorXR.Core
         IInterfaceConnector, IUsesConnectInterfaces, IDelayedInitializationModule,
         IUsesFunctionalityInjection, IProvidesSelectTool
     {
+        const string k_LastAuthoringTool = "EditorXR.LastAuthoringTool";
+        const string k_LastUtilityTool = "EditorXR.LastUtilityTool";
+
         static readonly List<Type> k_AllTools = new List<Type>();
 
         readonly Dictionary<Type, List<ILinkedObject>> m_LinkedObjects = new Dictionary<Type, List<ILinkedObject>>();
@@ -216,6 +219,14 @@ namespace Unity.EditorXR.Core
             return defaultTools.Contains(type);
         }
 
+        internal static void ResetPreferences()
+        {
+#if UNITY_EDITOR
+            EditorPrefs.DeleteKey(k_LastAuthoringTool);
+            EditorPrefs.DeleteKey(k_LastUtilityTool);
+#endif
+        }
+
         static ControllerRole GetControllerRole(Node node)
         {
             var isLeft = node == Node.LeftHand;
@@ -325,6 +336,7 @@ namespace Unity.EditorXR.Core
                 this.InjectFunctionalitySingle(toolsMenu);
                 device.toolsMenu = toolsMenu;
                 toolsMenu.rayOrigin = rayOrigin;
+                toolsMenu.controllerRole = GetControllerRole(device.node);
                 toolsMenu.setButtonForType(typeof(IMainMenu), null);
                 toolsMenu.setButtonForType(typeof(SelectionTool), selectionToolData != null ? selectionToolData.icon : null);
 
@@ -334,6 +346,22 @@ namespace Unity.EditorXR.Core
                 spatialMenu.Setup();
                 device.spatialMenu = spatialMenu;
             }
+
+#if UNITY_EDITOR
+            foreach (var device in deviceData)
+            {
+                if (device.proxy != proxy)
+                    continue;
+
+                var key = GetControllerRole(device.node) == ControllerRole.Authoring
+                    ? k_LastAuthoringTool : k_LastUtilityTool;
+                var type = Type.GetType(EditorPrefs.GetString(key, string.Empty));
+                bool companion;
+                if (type != null && !IsDefaultTool(type)
+                    && ToolSupportsRole(type, GetControllerRole(device.node), out companion))
+                    SelectTool(device.rayOrigin, type, false);
+            }
+#endif
 
             if (deviceInputModule != null)
                 deviceInputModule.UpdatePlayerHandleMaps();
@@ -527,6 +555,16 @@ namespace Unity.EditorXR.Core
 
 #if UNITY_EDITOR
             EditorXRAnalyticsEvents.ToolSelected.Send(new SelectToolArgs { label = toolType.Name });
+            if (result)
+            {
+                var selectedDevice = deviceData.FirstOrDefault(data => data.rayOrigin == rayOrigin);
+                if (selectedDevice != null)
+                {
+                    var key = GetControllerRole(selectedDevice.node) == ControllerRole.Authoring
+                        ? k_LastAuthoringTool : k_LastUtilityTool;
+                    EditorPrefs.SetString(key, toolType.AssemblyQualifiedName);
+                }
+            }
 #endif
             return result;
         }

@@ -88,7 +88,6 @@ namespace Unity.EditorXR.Tools
         GameObject m_BlinkVisualsGO;
         BlinkVisuals m_BlinkVisuals;
 
-        bool m_AllowScaling = true;
         bool m_Scaling;
         float m_StartScale;
         float m_StartDistance;
@@ -96,6 +95,12 @@ namespace Unity.EditorXR.Tools
         Vector3 m_StartMidPoint;
         Vector3 m_StartDirection;
         float m_StartYaw;
+        float m_FilteredDistance;
+        float m_FilteredYaw;
+        Vector3 m_FilteredMidPoint;
+        Vector3 m_FilteredDirection;
+        bool m_ScaleResetLatched;
+        bool m_WorldResetLatched;
 
         bool m_Rotating;
         bool m_StartCrawling;
@@ -809,163 +814,141 @@ namespace Unity.EditorXR.Tools
                     return false;
             }
 
-            if (this.IsSharedUpdater(this))
+            if (!this.IsSharedUpdater(this))
+                return m_Scaling;
+
+            var otherTool = linkedObjects.Cast<LocomotionTool>().FirstOrDefault(tool => tool != this);
+            var otherInput = otherTool != null ? otherTool.m_LocomotionInput : null;
+            var thisGrip = m_LocomotionInput.crawl;
+            if (otherInput == null || !thisGrip.isHeld || !otherInput.crawl.isHeld)
             {
-                var crawl = m_LocomotionInput.crawl;
-                if (crawl.isHeld)
-                {
-                    if (m_AllowScaling)
-                    {
-                        var otherGripHeld = false;
-                        foreach (var linkedObject in linkedObjects)
-                        {
-                            var otherLocomotionTool = (LocomotionTool)linkedObject;
-                            if (otherLocomotionTool == this)
-                                continue;
-
-                            var otherLocomotionInput = otherLocomotionTool.m_LocomotionInput;
-                            if (otherLocomotionInput == null) // This can occur if crawl is pressed when EVR is opened
-                                continue;
-
-                            var otherCrawl = otherLocomotionInput.crawl;
-                            if (otherCrawl.isHeld)
-                            {
-                                otherGripHeld = true;
-                                consumeControl(crawl);
-                                consumeControl(otherCrawl);
-
-                                // Also consume thumbstick axes to disable radial menu
-                                consumeControl(m_LocomotionInput.horizontal);
-                                consumeControl(m_LocomotionInput.vertical);
-                                consumeControl(otherLocomotionInput.horizontal);
-                                consumeControl(otherLocomotionInput.vertical);
-
-                                // Pre-emptively consume thumbstick press to override UndoMenu
-                                consumeControl(m_LocomotionInput.scaleReset);
-                                consumeControl(otherLocomotionInput.scaleReset);
-
-                                // Also pre-emptively consume world-reset
-                                consumeControl(m_LocomotionInput.worldReset);
-                                consumeControl(otherLocomotionInput.worldReset);
-
-                                var thisPosition = cameraRig.InverseTransformPoint(rayOrigin.position);
-                                var otherRayOrigin = otherLocomotionTool.rayOrigin;
-                                var otherPosition = cameraRig.InverseTransformPoint(otherRayOrigin.position);
-                                var distance = Vector3.Distance(thisPosition, otherPosition);
-
-                                this.AddRayVisibilitySettings(rayOrigin, this, false, false);
-                                this.AddRayVisibilitySettings(otherRayOrigin, this, false, false);
-
-                                var rayToRay = otherPosition - thisPosition;
-                                var midPoint = thisPosition + rayToRay * 0.5f;
-
-                                rayToRay.y = 0; // Use for yaw rotation
-
-                                var pivotYaw = cameraRig.rotation.ConstrainYaw();
-
-                                if (!m_Scaling)
-                                {
-                                    m_StartScale = this.GetViewerScale();
-                                    m_StartDistance = distance;
-                                    m_StartMidPoint = pivotYaw * midPoint * m_StartScale;
-                                    m_StartPosition = cameraRig.position;
-                                    m_StartDirection = rayToRay;
-                                    m_StartYaw = cameraRig.rotation.eulerAngles.y;
-
-                                    otherLocomotionTool.m_Scaling = true;
-                                    otherLocomotionTool.m_Crawling = false;
-                                    otherLocomotionTool.m_StartCrawling = false;
-
-                                    m_ViewerScaleVisuals.leftHand = rayOrigin;
-                                    m_ViewerScaleVisuals.rightHand = otherRayOrigin;
-                                    m_ViewerScaleVisuals.gameObject.SetActive(true);
-
-                                    foreach (var obj in linkedObjects)
-                                    {
-                                        var locomotionTool = (LocomotionTool)obj;
-                                        locomotionTool.HideScaleFeedback();
-                                        locomotionTool.HideRotateFeedback();
-                                        locomotionTool.HideMainButtonFeedback();
-                                        locomotionTool.ShowResetScaleFeedback();
-                                    }
-                                }
-
-                                m_Scaling = true;
-                                m_StartCrawling = false;
-                                m_Crawling = false;
-
-                                var currentScale = Mathf.Clamp(m_StartScale * (m_StartDistance / distance), k_MinScale, k_MaxScale);
-
-                                var scaleReset = m_LocomotionInput.scaleReset;
-                                var scaleResetHeld = scaleReset.isHeld;
-
-                                var otherScaleReset = otherLocomotionInput.scaleReset;
-                                var otherScaleResetHeld = otherScaleReset.isHeld;
-
-                                // Press both thumb buttons to reset scale
-                                if (scaleResetHeld && otherScaleResetHeld)
-                                {
-                                    m_AllowScaling = false;
-
-                                    rayToRay = otherRayOrigin.position - rayOrigin.position;
-                                    midPoint = rayOrigin.position + rayToRay * 0.5f;
-                                    var currOffset = midPoint - cameraRig.position;
-
-                                    cameraRig.position = midPoint - currOffset / currentScale;
-                                    cameraRig.rotation = Quaternion.AngleAxis(m_StartYaw, Vector3.up);
-
-                                    ResetViewerScale();
-                                }
-
-                                var worldReset = m_LocomotionInput.worldReset;
-                                var worldResetHeld = worldReset.isHeld;
-                                if (worldResetHeld)
-                                    consumeControl(worldReset);
-
-                                var otherWorldReset = otherLocomotionInput.worldReset;
-                                var otherWorldResetHeld = otherWorldReset.isHeld;
-                                if (otherWorldResetHeld)
-                                    consumeControl(otherWorldReset);
-
-                                // Press both triggers to reset to origin
-                                if (worldResetHeld && otherWorldResetHeld)
-                                {
-                                    m_AllowScaling = false;
-                                    cameraRig.position = VRView.headCenteredOrigin;
-                                    cameraRig.rotation = Quaternion.identity;
-
-                                    ResetViewerScale();
-                                }
-
-                                if (m_AllowScaling)
-                                {
-                                    var yawSign = Mathf.Sign(Vector3.Dot(Quaternion.AngleAxis(90, Vector3.down) * m_StartDirection, rayToRay));
-                                    var currentYaw = m_StartYaw + Vector3.Angle(m_StartDirection, rayToRay) * yawSign;
-                                    var currentRotation = Quaternion.AngleAxis(currentYaw, Vector3.up);
-                                    midPoint = currentRotation * midPoint * currentScale;
-
-                                    var pos = m_StartPosition + m_StartMidPoint - midPoint;
-                                    cameraRig.position = pos;
-
-                                    cameraRig.rotation = currentRotation;
-
-                                    this.SetViewerScale(currentScale);
-                                }
-                                break;
-                            }
-                        }
-
-                        if (!otherGripHeld)
-                            CancelScale();
-                    }
-                }
-                else
-                {
-                    CancelScale();
-                }
+                CancelScale();
+                return false;
             }
 
+            ConsumeWorldScaleControls(m_LocomotionInput, otherInput, consumeControl);
+            var thisPosition = cameraRig.InverseTransformPoint(rayOrigin.position);
+            var otherPosition = cameraRig.InverseTransformPoint(otherTool.rayOrigin.position);
+            var direction = otherPosition - thisPosition;
+            var distance = direction.magnitude;
+            var midpoint = (thisPosition + otherPosition) * 0.5f;
+
+            if (!m_Scaling && !BeginWorldScale(otherTool, distance, midpoint, direction))
+                return false;
+
+            var scaleResetHeld = m_LocomotionInput.scaleReset.isHeld && otherInput.scaleReset.isHeld;
+            var worldResetHeld = m_LocomotionInput.worldReset.isHeld && otherInput.worldReset.isHeld;
+            if (scaleResetHeld && !m_ScaleResetLatched)
+            {
+                var worldMidpoint = (rayOrigin.position + otherTool.rayOrigin.position) * 0.5f;
+                var currentScale = this.GetViewerScale();
+                cameraRig.position = worldMidpoint - (worldMidpoint - cameraRig.position) / currentScale;
+                cameraRig.rotation = Quaternion.AngleAxis(m_StartYaw, Vector3.up);
+                ResetViewerScale();
+                thisPosition = cameraRig.InverseTransformPoint(rayOrigin.position);
+                otherPosition = cameraRig.InverseTransformPoint(otherTool.rayOrigin.position);
+                direction = otherPosition - thisPosition;
+                distance = direction.magnitude;
+                midpoint = (thisPosition + otherPosition) * 0.5f;
+                RebaseWorldScale(distance, midpoint, direction);
+                m_ViewerScaleVisuals.gameObject.SetActive(true);
+            }
+            else if (worldResetHeld && !m_WorldResetLatched)
+            {
+                cameraRig.position = VRView.headCenteredOrigin;
+                cameraRig.rotation = Quaternion.identity;
+                ResetViewerScale();
+                thisPosition = cameraRig.InverseTransformPoint(rayOrigin.position);
+                otherPosition = cameraRig.InverseTransformPoint(otherTool.rayOrigin.position);
+                direction = otherPosition - thisPosition;
+                distance = direction.magnitude;
+                midpoint = (thisPosition + otherPosition) * 0.5f;
+                RebaseWorldScale(distance, midpoint, direction);
+                m_ViewerScaleVisuals.gameObject.SetActive(true);
+            }
+
+            m_ScaleResetLatched = scaleResetHeld;
+            m_WorldResetLatched = worldResetHeld;
+
+            var filter = WorldScaleUtility.FilterFactor(Time.unscaledDeltaTime);
+            m_FilteredDistance = Mathf.Lerp(m_FilteredDistance, distance, filter);
+            m_FilteredMidPoint = Vector3.Lerp(m_FilteredMidPoint, midpoint, filter);
+            m_FilteredDirection = Vector3.Lerp(m_FilteredDirection, direction, filter);
+
+            float scale;
+            if (!WorldScaleUtility.TryGetScale(m_StartScale, m_StartDistance, m_FilteredDistance, k_MinScale,
+                k_MaxScale, out scale))
+                return true;
+
+            var targetYaw = WorldScaleUtility.GetYaw(m_StartDirection, m_FilteredDirection);
+            m_FilteredYaw = Mathf.LerpAngle(m_FilteredYaw, targetYaw, filter);
+            var rotation = Quaternion.AngleAxis(m_StartYaw + m_FilteredYaw, Vector3.up);
+            cameraRig.position = WorldScaleUtility.GetAnchoredPosition(m_StartPosition, m_StartMidPoint,
+                m_FilteredMidPoint, rotation, scale);
+            cameraRig.rotation = rotation;
+            this.SetViewerScale(scale);
+
             return m_Scaling;
+        }
+
+        bool BeginWorldScale(LocomotionTool otherTool, float distance, Vector3 midpoint, Vector3 direction)
+        {
+            if (distance < WorldScaleUtility.MinimumHandSeparation)
+                return false;
+
+            RebaseWorldScale(distance, midpoint, direction);
+            m_Scaling = true;
+            m_StartCrawling = false;
+            m_Crawling = false;
+            otherTool.m_Scaling = true;
+            otherTool.m_Crawling = false;
+            otherTool.m_StartCrawling = false;
+            this.AddRayVisibilitySettings(rayOrigin, this, false, false);
+            this.AddRayVisibilitySettings(otherTool.rayOrigin, this, false, false);
+            m_ViewerScaleVisuals.leftHand = rayOrigin;
+            m_ViewerScaleVisuals.rightHand = otherTool.rayOrigin;
+            m_ViewerScaleVisuals.gameObject.SetActive(true);
+
+            foreach (var linkedObject in linkedObjects)
+            {
+                var tool = (LocomotionTool)linkedObject;
+                tool.HideScaleFeedback();
+                tool.HideRotateFeedback();
+                tool.HideMainButtonFeedback();
+                tool.ShowResetScaleFeedback();
+            }
+
+            return true;
+        }
+
+        void RebaseWorldScale(float distance, Vector3 midpoint, Vector3 direction)
+        {
+            m_StartScale = this.GetViewerScale();
+            m_StartDistance = distance;
+            m_StartPosition = cameraRig.position;
+            m_StartYaw = cameraRig.rotation.eulerAngles.y;
+            m_StartDirection = direction;
+            m_StartDirection.y = 0f;
+            m_StartMidPoint = cameraRig.rotation.ConstrainYaw() * midpoint * m_StartScale;
+            m_FilteredDistance = distance;
+            m_FilteredMidPoint = midpoint;
+            m_FilteredDirection = direction;
+            m_FilteredYaw = 0f;
+        }
+
+        static void ConsumeWorldScaleControls(LocomotionInput first, LocomotionInput second,
+            ConsumeControlDelegate consumeControl)
+        {
+            consumeControl(first.crawl);
+            consumeControl(second.crawl);
+            consumeControl(first.horizontal);
+            consumeControl(first.vertical);
+            consumeControl(second.horizontal);
+            consumeControl(second.vertical);
+            consumeControl(first.scaleReset);
+            consumeControl(second.scaleReset);
+            consumeControl(first.worldReset);
+            consumeControl(second.worldReset);
         }
 
         void ResetViewerScale()
@@ -976,8 +959,9 @@ namespace Unity.EditorXR.Tools
 
         void CancelScale()
         {
-            m_AllowScaling = true;
             m_Scaling = false;
+            m_ScaleResetLatched = false;
+            m_WorldResetLatched = false;
 
             foreach (var linkedObject in linkedObjects)
             {

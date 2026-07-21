@@ -20,6 +20,26 @@ namespace Unity.EditorXR.Data
         static float s_ProjectFolderLoadStartTime;
         static float s_ProjectFolderLoadYieldTime;
 
+#if UNITY_EDITOR
+        struct HierarchyEntry
+        {
+            public string name;
+            public string guid;
+            public int depth;
+            public bool isFolder;
+            public bool isMainRepresentation;
+
+            public HierarchyEntry(HierarchyProperty property)
+            {
+                name = property.name;
+                guid = property.guid;
+                depth = property.depth;
+                isFolder = property.isFolder;
+                isMainRepresentation = property.isMainRepresentation;
+            }
+        }
+#endif
+
         List<AssetData> m_Assets;
         readonly int m_Index;
         int m_Depth;
@@ -42,14 +62,21 @@ namespace Unity.EditorXR.Data
             var hp = new HierarchyProperty(HierarchyType.Assets);
             hp.SetSearchFilter("t:object", 0);
 
-            var folderStack = new Stack<FolderData>();
-            var folder = new FolderData(hp.name, hp.guid.GetHashCode(), hp.depth);
+            // HierarchyProperty holds a native AssetDatabase transaction that becomes invalid after a refresh.
+            // Snapshot it before the coroutine yields so project changes cannot invalidate the iterator mid-scan.
+            var rootEntry = new HierarchyEntry(hp);
+            var entries = new List<HierarchyEntry>();
             while (hp.Next(null))
+                entries.Add(new HierarchyEntry(hp));
+
+            var folderStack = new Stack<FolderData>();
+            var folder = new FolderData(rootEntry.name, rootEntry.guid.GetHashCode(), rootEntry.depth);
+            foreach (var entry in entries)
             {
-                while (hp.depth <= folder.m_Depth)
+                while (entry.depth <= folder.m_Depth)
                     folder = folderStack.Pop();
 
-                if (hp.isFolder)
+                if (entry.isFolder)
                 {
                     var folderList = folder.m_Children;
                     if (folderList == null)
@@ -59,10 +86,10 @@ namespace Unity.EditorXR.Data
                     }
 
                     folderStack.Push(folder);
-                    folder = new FolderData(hp.name, hp.guid.GetHashCode(), hp.depth);
+                    folder = new FolderData(entry.name, entry.guid.GetHashCode(), entry.depth);
                     folderList.Add(folder);
                 }
-                else if (hp.isMainRepresentation) // Ignore sub-assets (mixer children, terrain splats, etc.)
+                else if (entry.isMainRepresentation) // Ignore sub-assets (mixer children, terrain splats, etc.)
                 {
                     var assetList = folder.m_Assets;
                     if (assetList == null)
@@ -71,7 +98,7 @@ namespace Unity.EditorXR.Data
                         folder.m_Assets = assetList;
                     }
 
-                    assetList.Add(CreateAssetData(hp, assetTypes));
+                    assetList.Add(CreateAssetData(entry.name, entry.guid, assetTypes));
                 }
 
                 // Spend a minimum amount of time in this function, and if we have extra time in the frame, use it
@@ -91,12 +118,12 @@ namespace Unity.EditorXR.Data
             callback(folder);
         }
 
-        static AssetData CreateAssetData(HierarchyProperty hp, HashSet<string> assetTypes = null)
+        static AssetData CreateAssetData(string assetName, string guid, HashSet<string> assetTypes = null)
         {
             var typeName = string.Empty;
             if (assetTypes != null)
             {
-                var path = AssetDatabase.GUIDToAssetPath(hp.guid);
+                var path = AssetDatabase.GUIDToAssetPath(guid);
                 if (Path.GetExtension(path) == ".asset") // Some .assets cause a hitch when getting their type
                 {
                     typeName = "Asset";
@@ -125,7 +152,7 @@ namespace Unity.EditorXR.Data
                 assetTypes.Add(typeName);
             }
 
-            return new AssetData(hp.name, hp.guid, typeName);
+            return new AssetData(assetName, guid, typeName);
         }
 #else
         public void SetAssetList(List<AssetData> list)

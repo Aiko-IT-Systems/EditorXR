@@ -19,6 +19,7 @@ namespace Unity.EditorXR.Modules
         float m_ProjectFolderLoadStartTime;
         float m_ProjectFolderLoadYieldTime;
         IModule m_ModuleImplementation;
+        Coroutine m_FolderDataLoad;
 
         public int initializationOrder { get { return 0; } }
         public int shutdownOrder { get { return 0; } }
@@ -33,6 +34,11 @@ namespace Unity.EditorXR.Modules
         public void Shutdown()
         {
             EditorApplication.projectChanged -= UpdateProjectFolders;
+            if (m_FolderDataLoad != null)
+            {
+                StopCoroutine(m_FolderDataLoad);
+                m_FolderDataLoad = null;
+            }
         }
 
         public void AddConsumer(IUsesProjectFolderData consumer)
@@ -72,12 +78,16 @@ namespace Unity.EditorXR.Modules
 
         void UpdateProjectFolders()
         {
+            if (m_FolderDataLoad != null)
+                StopCoroutine(m_FolderDataLoad);
+
             m_AssetTypes.Clear();
-            StartCoroutine(FolderData.CreateRootFolderData(m_AssetTypes, SetupFolderData));
+            m_FolderDataLoad = StartCoroutine(FolderData.CreateRootFolderData(m_AssetTypes, SetupFolderData));
         }
 
         void SetupFolderData(FolderData folderData)
         {
+            m_FolderDataLoad = null;
             m_FolderData = new List<FolderData> { folderData };
 
             // Send new data to existing folderLists

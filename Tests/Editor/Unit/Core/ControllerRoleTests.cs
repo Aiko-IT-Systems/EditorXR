@@ -41,10 +41,10 @@ namespace Unity.EditorXR.Tests
             var previous = EditorPrefs.GetBool(k_AuthoringHandLeft, false);
             try
             {
-                Core.EditorXR.authoringHandLeft = true;
+                global::Unity.EditorXR.Core.EditorXR.authoringHandLeft = true;
                 Assert.IsTrue(EditorPrefs.GetBool(k_AuthoringHandLeft));
 
-                Core.EditorXR.authoringHandLeft = false;
+                global::Unity.EditorXR.Core.EditorXR.authoringHandLeft = false;
                 Assert.IsFalse(EditorPrefs.GetBool(k_AuthoringHandLeft));
             }
             finally

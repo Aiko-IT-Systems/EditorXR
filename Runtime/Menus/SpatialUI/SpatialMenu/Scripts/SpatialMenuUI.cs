@@ -487,7 +487,11 @@ namespace Unity.EditorXR.Menus
                         subMenuElement.VisualElement = providerMenuElement;
                         providerMenuElement.parentMenuData = menuData;
                         providerMenuElement.visible = true;
-                        providerMenuElement.selected = subMenuElement.correspondingFunction;
+                        providerMenuElement.selected = selectionNode =>
+                        {
+                            subMenuElement.correspondingFunction(selectionNode);
+                            SpatialMenu.CloseActiveMenu();
+                        };
                     }
 
                     break;

@@ -337,12 +337,21 @@ namespace Unity.EditorXR.Tools
                 || authoringTool.m_LocomotionInput == null)
                 return false;
 
-            if (this.IsHoveringOverUI(utilityTool.rayOrigin) || this.IsHoveringOverUI(authoringTool.rayOrigin))
-                return false;
-
             var utility = utilityTool.m_LocomotionInput;
             var authoring = authoringTool.m_LocomotionInput;
             var commandHeld = utility.crawl.isHeld;
+            if (!commandHeld && authoring.reverse.wasJustPressed && Unity.EditorXR.SpatialMenu.persistentMenuOpen)
+            {
+                var closed = Unity.EditorXR.SpatialMenu.TogglePersistent(authoringTool.rayOrigin);
+                if (closed)
+                    consumeControl(authoring.reverse);
+
+                return closed;
+            }
+
+            if (this.IsHoveringOverUI(utilityTool.rayOrigin) || this.IsHoveringOverUI(authoringTool.rayOrigin))
+                return false;
+
             var actions = ModuleLoaderCore.instance.GetModule<ActionsModule>();
             var used = false;
 
@@ -385,7 +394,7 @@ namespace Unity.EditorXR.Tools
             }
             else if (authoring.reverse.wasJustPressed)
             {
-                used = actions != null && actions.ExecuteAction<Duplicate>();
+                used = Unity.EditorXR.SpatialMenu.TogglePersistent(authoringTool.rayOrigin);
                 if (used)
                     consumeControl(authoring.reverse);
             }

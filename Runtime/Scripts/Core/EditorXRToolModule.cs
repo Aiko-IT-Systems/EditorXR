@@ -341,8 +341,14 @@ namespace Unity.EditorXR.Core
                 toolsMenu.setButtonForType(typeof(IMainMenu), null);
                 toolsMenu.setButtonForType(typeof(SelectionTool), selectionToolData != null ? selectionToolData.icon : null);
 
-                // The role-based hand menus replace the legacy thumbstick spatial wheel.
-                device.spatialMenu = null;
+                var spatialMenu = EditorXRUtils.AddComponent<SpatialMenu>(gameObject);
+                this.ConnectInterfaces(spatialMenu, rayOrigin);
+                this.InjectFunctionalitySingle(spatialMenu);
+                spatialMenu.rayOrigin = rayOrigin;
+                spatialMenu.node = device.node;
+                spatialMenu.controllerRole = GetControllerRole(device.node);
+                spatialMenu.Setup();
+                device.spatialMenu = spatialMenu;
             }
 
 #if UNITY_EDITOR

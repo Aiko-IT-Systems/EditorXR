@@ -64,6 +64,7 @@ namespace Unity.EditorXR
         static readonly List<SpatialMenuData> k_SpatialMenuData = new List<SpatialMenuData>();
         static readonly List<Transform> k_AllSpatialMenuRayOrigins = new List<Transform>();
         static readonly List<ISpatialMenuProvider> k_SpatialMenuProviders = new List<ISpatialMenuProvider>();
+        static readonly List<SpatialMenu> k_Instances = new List<SpatialMenu>();
 
         static SpatialMenu s_ControllingSpatialMenu;
         static SpatialMenuUI s_SpatialMenuUI;
@@ -92,6 +93,7 @@ namespace Unity.EditorXR
 #pragma warning restore 649
 
         bool m_Visible;
+        bool m_PersistentOpen;
 
         SpatialMenuInput m_CurrentSpatialActionMapInput;
 
@@ -233,6 +235,9 @@ namespace Unity.EditorXR
 
         public void Setup()
         {
+            if (!k_Instances.Contains(this))
+                k_Instances.Add(this);
+
             CreateUI();
         }
 
@@ -242,7 +247,11 @@ namespace Unity.EditorXR
             // Reset the applicable selection gizmo (SceneView) states
             sceneViewGizmosVisible = true;
 
-            if (s_SpatialMenuUI)
+            k_Instances.Remove(this);
+            if (s_ControllingSpatialMenu == this)
+                s_ControllingSpatialMenu = null;
+
+            if (k_Instances.Count == 0 && s_SpatialMenuUI)
                 UnityObjectUtils.Destroy(s_SpatialMenuUI.gameObject);
         }
 #endif
@@ -348,155 +357,59 @@ namespace Unity.EditorXR
         public void ProcessInput(ActionMapInput input, ConsumeControlDelegate consumeControl)
         {
             m_CurrentSpatialActionMapInput = (SpatialMenuInput)input;
-            if (s_ControllingSpatialMenu != null && s_ControllingSpatialMenu != this)
-            {
-                this.SetRayOriginEnabled(m_RayOrigin, true);
-
-                // Perform custom logic for proxies (driving a SpatialMenuController) that didn't initiate the display of the SpatialMenu
-                // Though they may need their input actions to drive certain SpatialMenu functionality
-                var cancelJustPressed = CancelWasJustPressedTest(consumeControl);
-                if (!cancelJustPressed) // Only process selection testing if cancel was not just pressed
-                    SelectJustPressedTest(consumeControl, false);
-
+            this.SetRayOriginEnabled(m_RayOrigin, true);
+            if (s_ControllingSpatialMenu != this || !m_PersistentOpen || s_SpatialMenuUI == null)
                 return;
-            }
 
-            // The Utility stick is dedicated to locomotion. It can still point at and operate an
-            // Authoring-hand menu, but it must not summon the menu while moving.
-            if (controllerRole != ControllerRole.Authoring)
-            {
-                m_CurrentSpatialActionMapInput = null;
-                return;
-            }
+            s_SpatialMenuUI.spatialInterfaceInputMode = SpatialUIView.SpatialInterfaceInputMode.Ray;
+            this.SetManipulatorsVisible(this, false);
+            visible = true;
+        }
 
-            var showMenuInputAction = m_CurrentSpatialActionMapInput.showMenu;
-            var showMenuInputActionVector2 = showMenuInputAction.vector2;
-            var showMenuInputActionVector2Normalized = showMenuInputAction.vector2.normalized;
-            var positiveYInputAction = showMenuInputAction.positiveY;
+        internal static bool persistentMenuOpen
+        {
+            get { return s_ControllingSpatialMenu != null && s_ControllingSpatialMenu.m_PersistentOpen; }
+        }
 
-            // count how long the input value has been default and thus is in deadzone or lifted
-            if (showMenuInputAction.vector2 == default(Vector2))
-                m_IdleAtCenterDuration += Time.unscaledDeltaTime;
+        internal static bool TogglePersistent(Transform authoringRayOrigin)
+        {
+            var menu = k_Instances.FirstOrDefault(instance => instance && instance.m_RayOrigin == authoringRayOrigin);
+            if (!menu)
+                menu = k_Instances.FirstOrDefault(instance => instance && instance.controllerRole == ControllerRole.Authoring);
+
+            if (!menu)
+                return false;
+
+            if (s_ControllingSpatialMenu == menu && menu.m_PersistentOpen)
+                menu.EndDisplayOfMenu();
             else
-                m_IdleAtCenterDuration = 0f;
+                menu.BeginPersistentDisplay();
 
-            // release after the input has been default for a few frames. This almost entirely prevents
-            // the case where having your thumb in the middle of the pad causes default value and thus release
-            if (m_IdleAtCenterDuration >= 0.05f)
-            {
-                m_SpatialInputHold = false;
-                EndDisplayOfMenu();
-            }
+            return true;
+        }
 
-            // Detect the initial activation of the relevant Spatial input, in order to display menu and own control with this SpatialMenuController
-            if (positiveYInputAction.wasJustPressed && Mathf.Approximately(m_TotalShowMenuCircularInputRotation, 0))
-            {
-                s_ControllingSpatialMenu = this;
-                m_OriginalShowMenuCircularInputDirection = showMenuInputActionVector2Normalized;
-                m_UpdatingShowMenuCircularInputDirection = m_OriginalShowMenuCircularInputDirection;
-                m_ShowMenuCircularInputCrossedRotationThresholdForSelection = false;
+        internal static void CloseActiveMenu()
+        {
+            if (s_ControllingSpatialMenu != null)
+                s_ControllingSpatialMenu.EndDisplayOfMenu();
+        }
 
-                m_SpatialInputHold = true;
-                ConsumeControls(m_CurrentSpatialActionMapInput, consumeControl); // Select should only be consumed upon activation, so other UI can receive select events
+        void BeginPersistentDisplay()
+        {
+            if (s_ControllingSpatialMenu != null && s_ControllingSpatialMenu != this)
+                s_ControllingSpatialMenu.EndDisplayOfMenu();
 
+            s_ControllingSpatialMenu = this;
+            m_PersistentOpen = true;
 #if UNITY_EDITOR
-                // Hide the scene view Gizmo UI that draws SpatialMenu outlines and
-                sceneViewGizmosVisible = false;
+            sceneViewGizmosVisible = false;
 #endif
-
-                // Alternatively, SpatialMenu's state could be a single static state
-                // As opposed to passing the SpatialMenu instance's delegate when a new SpatialMenu instance initiates display of the menu
-                s_SpatialMenuUI.changeMenuState = ChangeMenuState;
-
-                spatialMenuState = SpatialMenuState.NavigatingTopLevel;
-                s_SpatialMenuUI.spatialInterfaceInputMode = SpatialUIView.SpatialInterfaceInputMode.Neutral;
-
-                foreach (var data in k_SpatialMenuData)
-                {
-                    foreach (var element in data.spatialMenuElements)
-                    {
-                        // When the SpatialMenu is displayed, assign its node as the controllerNode to all SpatialMenuElements
-                        // This node is used as a fallback, if the element isn't currently being hovered by a proxy/ray
-                        // This allows for a separate proxy/device, other than that which is the active SpatialMenuController,
-                        // to have node-specific operations performed on the hovering node (adding tools, etc), rather than the controlling Menu node
-                        if (element.VisualElement != null)
-                            element.VisualElement.spatialMenuActiveControllerNode = node;
-                    }
-                }
-
-                return;
-            }
-
-            // Trigger + continued/held circular-input, when beyond a threshold, allow for element selection cycling
-            // If the magnitude of showMenu is below 0.5, consider the finger to have left the thumbstick/trackpad outer edge; close the menu
-            if (positiveYInputAction.wasJustPressed || showMenuInputActionVector2.magnitude > 0.5f)
-            {
-                Vector3 facing = showMenuInputActionVector2Normalized;
-                if (!m_ShowMenuCircularInputCrossedRotationThresholdForSelection)
-                {
-                    // Calculate rotation difference only in cases where the threshold has yet to be crossed
-                    var rotationDifference = Vector2.Dot(m_OriginalShowMenuCircularInputDirection, showMenuInputActionVector2Normalized);
-                    if (rotationDifference < -0.5)
-                    {
-                        // Show Menu Rotation Input can now be cycled forward/backward to select menu elements
-                        s_SpatialMenuUI.spatialInterfaceInputMode = SpatialUIView.SpatialInterfaceInputMode.TriggerAffordanceRotation;
-                        m_ShowMenuCircularInputCrossedRotationThresholdForSelection = true;
-                    }
-                }
-                else
-                {
-                    if (m_CurrentSpatialActionMapInput.select.wasJustPressed)
-                    {
-                        s_SpatialMenuUI.SelectCurrentlyHighlightedElement(node, true);
-                    }
-                    else if (m_CircularTriggerSelectionCyclingCoroutine == null)
-                    {
-                        // Only allow selection if there has been a suitable amount of time since the previous selection
-                        // Show menu input rotation is held, and has crossed the necessary threshold to allow for menu element cycling
-                        // Positive is rotating to the right circularly, Negative is rotating to the left circularly
-                        var circularRotationDirection = Vector3.Cross(facing, m_UpdatingShowMenuCircularInputDirection).z;
-                        if (circularRotationDirection > 0.05f) // rotating to the right circularly
-                            this.RestartCoroutine(ref m_CircularTriggerSelectionCyclingCoroutine, TimedCircularTriggerSelection());
-                        else if (circularRotationDirection < -0.05f) // rotating to the left circularly
-                            this.RestartCoroutine(ref m_CircularTriggerSelectionCyclingCoroutine, TimedCircularTriggerSelection(false));
-                    }
-                }
-
-                var angle = Vector3.Angle(m_UpdatingShowMenuCircularInputDirection, facing);
-                m_TotalShowMenuCircularInputRotation += angle;
-                m_UpdatingShowMenuCircularInputDirection = facing;
-            }
-
-            // isHeld goes false when you go below 0.5.  this is the check for 'up-click' on the pad / stick
-            if ((positiveYInputAction.isHeld || m_SpatialInputHold) && s_SpatialMenuState != SpatialMenuState.Hidden)
-            {
-                // Individual axes can reset to 0, so always consume controls to pick them back up
-                consumeControl(m_CurrentSpatialActionMapInput.leftStickX);
-                consumeControl(m_CurrentSpatialActionMapInput.leftStickY);
-
-                // If the ray IS pointing at the spatialMenu, then set the mode to reflect external ray input
-                var atLeastOneInputDeviceIsAimingAtSpatialMenu = IsAimingAtUI();
-                if (atLeastOneInputDeviceIsAimingAtSpatialMenu) // Ray-based interaction takes precedence over other input types
-                    s_SpatialMenuUI.spatialInterfaceInputMode = SpatialUIView.SpatialInterfaceInputMode.Ray;
-                else if (s_SpatialMenuUI.spatialInterfaceInputMode == SpatialUIView.SpatialInterfaceInputMode.Ray)
-                    s_SpatialMenuUI.ReturnToPreviousInputMode();
-
-                this.SetRayOriginEnabled(m_RayOrigin, false);
-                this.SetManipulatorsVisible(this, false);
-                visible = true;
-
-                if (s_SpatialMenuState == SpatialMenuState.NavigatingSubMenuContent)
-                {
-                    var cancelJustPressed = CancelWasJustPressedTest(consumeControl);
-                    if (cancelJustPressed)
-                        return;
-                }
-
-                return;
-            }
-
-            if (!positiveYInputAction.isHeld && !m_SpatialInputHold)
-                EndDisplayOfMenu();
+            s_SpatialMenuUI.changeMenuState = ChangeMenuState;
+            visible = true;
+            s_SpatialMenuUI.spatialInterfaceInputMode = SpatialUIView.SpatialInterfaceInputMode.Ray;
+            this.SetRayOriginEnabled(m_RayOrigin, true);
+            this.SetManipulatorsVisible(this, false);
+            this.Pulse(node, m_MenuOpenPulse);
         }
 
         bool CancelWasJustPressedTest(ConsumeControlDelegate consumeControl)
@@ -529,6 +442,7 @@ namespace Unity.EditorXR
         void EndDisplayOfMenu()
         {
             s_ControllingSpatialMenu = null; // Allow another SpatialMenu to own control of the SpatialMenuUI
+            m_PersistentOpen = false;
             m_CurrentSpatialActionMapInput = null;
             m_TotalShowMenuCircularInputRotation = 0;
             m_HighlightedTopLevelMenuElementPosition = -1;

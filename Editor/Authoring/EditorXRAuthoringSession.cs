@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using UnityEditor;
 using UnityEditor.Compilation;
@@ -20,6 +21,10 @@ namespace Unity.EditorXR.Authoring
         const string k_MenuRoot = "Window/EditorXR/Authoring/";
         const string k_ManagerTypeName = "Unity.EditorXR.Core.EditingContextManager";
         const string k_UndoLabel = "Apply EditorXR Authoring Session";
+        const string k_ClientSimSettingsTypeName = "VRC.SDK3.ClientSim.ClientSimSettings";
+        const string k_ClientSimOverrideKey = "Unity.EditorXR.Authoring.ClientSimOverrideActive";
+        const string k_ClientSimPreviousStateKey = "Unity.EditorXR.Authoring.ClientSimPreviousState";
+        const double k_RecoveryIdleDelay = 1.5d;
 
         static readonly string k_RecoveryPath = Path.Combine(Directory.GetParent(Application.dataPath).FullName,
             "Library", "EditorXR", "AuthoringRecovery.json");
@@ -67,6 +72,8 @@ namespace Unity.EditorXR.Authoring
             AuthoringSessionMethods.setTransformParent = SetTransformParent;
 
             LoadRecovery();
+            if (!Application.isPlaying && !EditorApplication.isPlayingOrWillChangePlaymode)
+                RestoreClientSim();
             if (s_Data != null && Application.isPlaying && GetState() == AuthoringRecoveryState.Recording)
                 RehydrateRecordingState();
             else
@@ -111,6 +118,7 @@ namespace Unity.EditorXR.Authoring
             BuildBaseline();
             ResetTracking();
             WriteRecovery();
+            DisableClientSimForAuthoring();
             EditorApplication.EnterPlaymode();
         }
 
@@ -235,6 +243,7 @@ namespace Unity.EditorXR.Authoring
                 // ObjectChangeEvents are published at the end of the frame, after most tool scopes close.
                 s_GraceUpdates = 2;
                 s_SnapshotDirty = true;
+                s_NextRecoveryWrite = EditorApplication.timeSinceStartup + k_RecoveryIdleDelay;
             }
         }
 
@@ -636,13 +645,14 @@ namespace Unity.EditorXR.Authoring
             if (s_GraceUpdates > 0 && s_ScopeDepth == 0)
                 --s_GraceUpdates;
 
-            if (!sessionActive || !s_SnapshotDirty || EditorApplication.timeSinceStartup < s_NextRecoveryWrite)
+            if (!sessionActive || !s_SnapshotDirty || s_ScopeDepth > 0 || s_GraceUpdates > 0
+                || EditorApplication.timeSinceStartup < s_NextRecoveryWrite)
                 return;
 
             CaptureChangeSet();
             WriteRecovery();
             s_SnapshotDirty = false;
-            s_NextRecoveryWrite = EditorApplication.timeSinceStartup + 0.5d;
+            s_NextRecoveryWrite = EditorApplication.timeSinceStartup + k_RecoveryIdleDelay;
         }
 
         static void CaptureChangeSet()
@@ -830,11 +840,89 @@ namespace Unity.EditorXR.Authoring
                 WriteRecovery();
                 Debug.Log("[EditorXR Authoring] Play Mode is exiting with pending changes. Waiting for the Apply / Discard choice.");
             }
-            else if (state == PlayModeStateChange.EnteredEditMode && s_Data != null
-                && GetState() == AuthoringRecoveryState.PendingApply)
+            else if (state == PlayModeStateChange.EnteredEditMode)
             {
-                SchedulePendingExit();
+                RestoreClientSim();
+                if (s_Data != null && GetState() == AuthoringRecoveryState.PendingApply)
+                    SchedulePendingExit();
             }
+        }
+
+        static void DisableClientSimForAuthoring()
+        {
+            var settingsType = FindType(k_ClientSimSettingsTypeName);
+            if (settingsType == null)
+                return;
+
+            try
+            {
+                var instanceProperty = settingsType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
+                var enabledField = settingsType.GetField("enableClientSim", BindingFlags.Public | BindingFlags.Instance);
+                var settings = instanceProperty != null ? instanceProperty.GetValue(null, null) : null;
+                if (settings == null || enabledField == null)
+                    return;
+
+                if (!(bool)enabledField.GetValue(settings))
+                    return;
+
+                EditorPrefs.SetBool(k_ClientSimPreviousStateKey, true);
+                EditorPrefs.SetBool(k_ClientSimOverrideKey, true);
+                enabledField.SetValue(settings, false);
+                SaveClientSimSettings(settingsType, settings);
+                Debug.Log("[EditorXR Authoring] ClientSim disabled for this authoring session.");
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("[EditorXR Authoring] Could not disable ClientSim: " + exception.Message);
+            }
+        }
+
+        static void RestoreClientSim()
+        {
+            if (!EditorPrefs.GetBool(k_ClientSimOverrideKey, false))
+                return;
+
+            var settingsType = FindType(k_ClientSimSettingsTypeName);
+            if (settingsType == null)
+                return;
+
+            try
+            {
+                var instanceProperty = settingsType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
+                var enabledField = settingsType.GetField("enableClientSim", BindingFlags.Public | BindingFlags.Instance);
+                var settings = instanceProperty != null ? instanceProperty.GetValue(null, null) : null;
+                if (settings == null || enabledField == null)
+                    return;
+
+                enabledField.SetValue(settings, EditorPrefs.GetBool(k_ClientSimPreviousStateKey, true));
+                SaveClientSimSettings(settingsType, settings);
+                EditorPrefs.DeleteKey(k_ClientSimOverrideKey);
+                EditorPrefs.DeleteKey(k_ClientSimPreviousStateKey);
+                Debug.Log("[EditorXR Authoring] ClientSim setting restored.");
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("[EditorXR Authoring] Could not restore ClientSim: " + exception.Message);
+            }
+        }
+
+        static Type FindType(string fullName)
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                var type = assembly.GetType(fullName, false);
+                if (type != null)
+                    return type;
+            }
+
+            return null;
+        }
+
+        static void SaveClientSimSettings(Type settingsType, object settings)
+        {
+            var saveMethod = settingsType.GetMethod("SaveSettings", BindingFlags.Public | BindingFlags.Static);
+            if (saveMethod != null)
+                saveMethod.Invoke(null, new[] { settings });
         }
 
         static void SchedulePendingExit()

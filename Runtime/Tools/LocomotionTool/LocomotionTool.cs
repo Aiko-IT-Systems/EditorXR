@@ -291,8 +291,15 @@ namespace Unity.EditorXR.Tools
                 return;
             }
 
+            var manipulatorDragging = this.GetManipulatorDragState();
             if (DoRoleShortcuts(consumeControl))
                 return;
+
+            if (manipulatorDragging || IsEitherRoleHoveringUI())
+            {
+                this.SetUIBlockedForRayOrigin(rayOrigin, false);
+                return;
+            }
 
             if (DoUtilityStickLocomotion(consumeControl))
                 return;
@@ -313,13 +320,16 @@ namespace Unity.EditorXR.Tools
 
         bool DoRoleShortcuts(ConsumeControlDelegate consumeControl)
         {
-            if (!this.IsSharedUpdater(this))
+            if (!this.IsSharedUpdater(this) || this.GetManipulatorDragState())
                 return false;
 
             var utilityTool = GetRoleTool(ControllerRole.Utility);
             var authoringTool = GetRoleTool(ControllerRole.Authoring);
             if (utilityTool == null || authoringTool == null || utilityTool.m_LocomotionInput == null
                 || authoringTool.m_LocomotionInput == null)
+                return false;
+
+            if (this.IsHoveringOverUI(utilityTool.rayOrigin) || this.IsHoveringOverUI(authoringTool.rayOrigin))
                 return false;
 
             var utility = utilityTool.m_LocomotionInput;
@@ -392,6 +402,18 @@ namespace Unity.EditorXR.Tools
                 m_DeleteTriggered = false;
 
             return used;
+        }
+
+        bool IsEitherRoleHoveringUI()
+        {
+            foreach (var linkedObject in linkedObjects)
+            {
+                var tool = (LocomotionTool)linkedObject;
+                if (this.IsHoveringOverUI(tool.rayOrigin))
+                    return true;
+            }
+
+            return false;
         }
 
         bool DoUtilityStickLocomotion(ConsumeControlDelegate consumeControl)

@@ -80,7 +80,16 @@ namespace Unity.EditorXR.Tests.Authoring
         public void RecoveryData_RoundTripsDeepCreatedHierarchy()
         {
             var data = new AuthoringRecoveryData();
-            var snapshot = new AuthoringHierarchySnapshot { root = new AuthoringCreatedNode { name = "Level 0" } };
+            var snapshot = new AuthoringHierarchySnapshot
+            {
+                root = new AuthoringCreatedNode
+                {
+                    name = "Level 0",
+                    localPosition = new Vector3(1f, 2f, 3f),
+                    localRotation = Quaternion.Euler(10f, 20f, 30f),
+                    localScale = new Vector3(2f, 3f, 4f)
+                }
+            };
             data.changeSet.creations.Add(snapshot);
             var current = snapshot.root;
             for (var depth = 1; depth <= 20; ++depth)
@@ -96,6 +105,10 @@ namespace Unity.EditorXR.Tests.Authoring
                 current = current.children[0];
 
             Assert.AreEqual("Level 20", current.name);
+            Assert.AreEqual(new Vector3(1f, 2f, 3f), restored.changeSet.creations[0].root.localPosition);
+            Assert.AreEqual(new Vector3(2f, 3f, 4f), restored.changeSet.creations[0].root.localScale);
+            Assert.Less(Quaternion.Angle(Quaternion.Euler(10f, 20f, 30f),
+                restored.changeSet.creations[0].root.localRotation), 0.001f);
         }
 
         GameObject CreateGameObject(string name)

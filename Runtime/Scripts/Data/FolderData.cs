@@ -56,5 +56,23 @@ namespace Unity.EditorXR.Data
             foreach (var child in m_Children)
                 child.SortRecursively();
         }
+
+        internal void CollectAssets(string type, List<AssetData> results)
+        {
+            if (m_Assets != null)
+            {
+                foreach (var asset in m_Assets)
+                {
+                    if (string.IsNullOrEmpty(type) || type.StartsWith(asset.type, StringComparison.Ordinal))
+                        results.Add(asset);
+                }
+            }
+
+            if (m_Children == null)
+                return;
+
+            foreach (var child in m_Children)
+                child.CollectAssets(type, results);
+        }
     }
 }

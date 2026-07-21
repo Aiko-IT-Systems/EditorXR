@@ -16,8 +16,26 @@ namespace Unity.EditorXR.Modules
     sealed class ProjectFolderModule : MonoBehaviour, IDelayedInitializationModule, IInterfaceConnector
     {
         const float k_ResultProcessingBudget = 0.004f;
-        const string k_ProjectSearchQuery = "a:assets";
         const string k_ProjectSearchProvider = "asset";
+
+        static readonly string[] k_ProjectSearchQueries =
+        {
+            "a:assets",
+            "a:assets t:folder",
+            "a:assets t:Material",
+            "a:assets t:Prefab",
+            "a:assets t:Model",
+            "a:assets t:Texture",
+            "a:assets t:Shader",
+            "a:assets t:Scene",
+            "a:assets t:Script",
+            "a:assets t:AnimationClip",
+            "a:assets t:AudioClip",
+            "a:assets t:VideoClip",
+            "a:assets t:Font",
+            "a:assets ext:asset",
+            "a:assets ext:controller"
+        };
 
         readonly List<IFilterUI> m_FilterUIs = new List<IFilterUI>();
         readonly List<IUsesProjectFolderData> m_ProjectFolderLists = new List<IUsesProjectFolderData>();
@@ -26,9 +44,10 @@ namespace Unity.EditorXR.Modules
         readonly object m_SearchLock = new object();
 
         List<FolderData> m_FolderData;
-        SearchContext m_SearchContext;
+        readonly List<SearchContext> m_SearchContexts = new List<SearchContext>();
         Coroutine m_ResultProcessor;
         int m_SearchGeneration;
+        int m_PendingSearches;
         bool m_SearchCompleted;
         bool m_RefreshScheduled;
 
@@ -101,12 +120,18 @@ namespace Unity.EditorXR.Modules
 
             m_AssetTypes.Clear();
             var generation = m_SearchGeneration;
-            m_SearchContext = SearchService.CreateContext(k_ProjectSearchProvider, k_ProjectSearchQuery,
-                SearchFlags.Default);
+            m_PendingSearches = k_ProjectSearchQueries.Length;
+            foreach (var query in k_ProjectSearchQueries)
+            {
+                var context = SearchService.CreateContext(k_ProjectSearchProvider, query,
+                    SearchFlags.Default | SearchFlags.WantsMore);
+                context.wantsMore = true;
+                m_SearchContexts.Add(context);
+                SearchService.Request(context,
+                    (searchContext, items) => QueueSearchItems(generation, items),
+                    searchContext => CompleteSearch(generation), SearchFlags.Default | SearchFlags.WantsMore);
+            }
 
-            SearchService.Request(m_SearchContext,
-                (context, items) => QueueSearchItems(generation, items),
-                context => CompleteSearch(generation), SearchFlags.Default);
             m_ResultProcessor = StartCoroutine(ProcessSearchResults(generation));
         }
 
@@ -132,7 +157,8 @@ namespace Unity.EditorXR.Modules
 
             lock (m_SearchLock)
             {
-                m_SearchCompleted = true;
+                m_PendingSearches--;
+                m_SearchCompleted = m_PendingSearches <= 0;
             }
         }
 
@@ -168,7 +194,7 @@ namespace Unity.EditorXR.Modules
 
             root.SortRecursively();
             SetupFolderData(root);
-            DisposeSearchContext();
+            DisposeSearchContexts();
             m_ResultProcessor = null;
         }
 
@@ -265,21 +291,21 @@ namespace Unity.EditorXR.Modules
                 m_ResultProcessor = null;
             }
 
-            DisposeSearchContext();
+            DisposeSearchContexts();
             lock (m_SearchLock)
             {
                 m_PendingSearchIds.Clear();
+                m_PendingSearches = 0;
                 m_SearchCompleted = false;
             }
         }
 
-        void DisposeSearchContext()
+        void DisposeSearchContexts()
         {
-            if (m_SearchContext == null)
-                return;
+            foreach (var context in m_SearchContexts)
+                context.Dispose();
 
-            m_SearchContext.Dispose();
-            m_SearchContext = null;
+            m_SearchContexts.Clear();
         }
 
         public void LoadModule() { }

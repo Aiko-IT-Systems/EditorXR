@@ -1,4 +1,6 @@
 using NUnit.Framework;
+using System.Collections.Generic;
+using Unity.EditorXR.Data;
 using Unity.EditorXR.Modules;
 using UnityEditor;
 
@@ -25,6 +27,23 @@ namespace Unity.EditorXR.Tests
         public void CommonAssetTypesAvoidLoadingAssets(string path, string expectedType)
         {
             Assert.AreEqual(expectedType, ProjectSearchUtility.GetAssetTypeName(path));
+        }
+
+        [Test]
+        public void TypeFilterCollectsMatchingAssetsAcrossFolders()
+        {
+            var root = new FolderData("Assets", 1, 0, "Assets");
+            var first = root.AddFolder("First", "Assets/First", 2);
+            var second = root.AddFolder("Second", "Assets/Second", 3);
+            first.AddAsset(new AssetData("First Material", "material-a", "Material"));
+            second.AddAsset(new AssetData("Second Material", "material-b", "Material"));
+            second.AddAsset(new AssetData("Prefab", "prefab", "Prefab"));
+
+            var results = new List<AssetData>();
+            root.CollectAssets("Material", results);
+
+            Assert.AreEqual(2, results.Count);
+            Assert.IsTrue(results.TrueForAll(asset => asset.type == "Material"));
         }
     }
 }

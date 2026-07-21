@@ -43,6 +43,7 @@ namespace Unity.EditorXR.Workspaces
         ProjectUI m_ProjectUI;
         FilterUI m_FilterUI;
         ZoomSliderUI m_ZoomSliderUI;
+        FolderData m_SelectedFolder;
 
         List<FolderData> m_FolderData;
         List<string> m_FilterList;
@@ -138,6 +139,7 @@ namespace Unity.EditorXR.Workspaces
             }
 
             filterList = m_FilterList;
+            m_FilterUI.filterChanged += RefreshVisibleAssets;
 
             foreach (var button in m_FilterUI.GetComponentsInChildren<WorkspaceButton>())
             {
@@ -252,7 +254,20 @@ namespace Unity.EditorXR.Workspaces
 
         void OnFolderSelected(FolderData data)
         {
-            m_ProjectUI.assetGridView.data = data.assets;
+            m_SelectedFolder = data;
+            RefreshVisibleAssets();
+        }
+
+        void RefreshVisibleAssets()
+        {
+            var assets = new List<AssetData>();
+            var query = searchQuery;
+            if (!string.IsNullOrEmpty(query) && m_FolderData != null && m_FolderData.Count > 0)
+                m_FolderData[0].CollectAssets(query, assets);
+            else if (m_SelectedFolder != null && m_SelectedFolder.assets != null)
+                assets.AddRange(m_SelectedFolder.assets);
+
+            m_ProjectUI.assetGridView.data = assets;
             m_ProjectUI.assetGridView.scrollOffset = 0;
         }
 

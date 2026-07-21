@@ -1,4 +1,5 @@
 using System;
+using UnityEngine;
 
 namespace Unity.EditorXR.Interfaces
 {
@@ -8,5 +9,10 @@ namespace Unity.EditorXR.Interfaces
     public static class ClientSimControlMethods
     {
         public static Func<bool> clientSimControlsActive = () => false;
+
+        /// <summary>
+        /// Aligns the EditorXR camera rig with ClientSim's local player root when both integrations are ready.
+        /// </summary>
+        public static Func<Transform, bool> alignViewerToPlayer = playerRoot => false;
     }
 }

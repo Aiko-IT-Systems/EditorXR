@@ -21,10 +21,11 @@ namespace Unity.EditorXR.ClientSim
         readonly object m_LeftHandValue, m_RightHandValue, m_OculusInputMethod;
         object m_InputObject, m_TrackingProvider;
         Transform m_HeadTransform, m_LeftHandTransform, m_RightHandTransform, m_PlayerXRotationTransform,
-            m_PlayerYRotationTransform;
+            m_PlayerYRotationTransform, m_PlayerRoot;
         bool m_PreviousMouseReleased;
 
         public bool isBound { get { return m_InputObject != null && m_TrackingProvider != null && m_HeadTransform != null; } }
+        public Transform playerRoot { get { return m_PlayerRoot; } }
 
         ClientSimReflectionAdapter(Assembly assembly)
         {
@@ -137,6 +138,7 @@ namespace Unity.EditorXR.ClientSim
                 return false;
             }
             m_TrackingProvider = providers[0];
+            m_PlayerRoot = providers[0].transform.root;
             m_HeadTransform = (Transform)m_Head.GetValue(m_TrackingProvider);
             m_LeftHandTransform = (Transform)m_LeftHand.GetValue(m_TrackingProvider);
             m_RightHandTransform = (Transform)m_RightHand.GetValue(m_TrackingProvider);
@@ -175,6 +177,7 @@ namespace Unity.EditorXR.ClientSim
             m_RightHandTransform = null;
             m_PlayerXRotationTransform = null;
             m_PlayerYRotationTransform = null;
+            m_PlayerRoot = null;
         }
 
         void ResetDesktopRotation()

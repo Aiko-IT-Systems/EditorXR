@@ -121,6 +121,10 @@ namespace Unity.EditorXR.ClientSim
                 }
                 catch (Exception exception) { FailClosed("Runtime binding failed: " + exception.Message); return; }
             }
+
+            if (m_ActiveMode == ClientSimControlMode.ClientSim)
+                ClientSimControlMethods.alignViewerToPlayer(m_Adapter.playerRoot);
+
             ClientSimXRFrame frame;
             if (ClientSimMetaXRInput.TryGetFrame(out frame))
                 ProcessFrame(frame);
@@ -183,6 +187,8 @@ namespace Unity.EditorXR.ClientSim
             if (mode == m_ActiveMode) return;
             ReleaseInjectedState();
             m_ActiveMode = m_ControlMode = mode;
+            if (mode == ClientSimControlMode.ClientSim && m_Adapter != null && m_Adapter.isBound)
+                ClientSimControlMethods.alignViewerToPlayer(m_Adapter.playerRoot);
             var handler = controlModeChanged;
             if (handler != null) handler(mode);
         }

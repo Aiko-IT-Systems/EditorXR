@@ -400,10 +400,13 @@ namespace Unity.EditorXR.Core
 
             if (m_UsePlayerModel)
                 AddPlayerModel();
+
+            ClientSimControlMethods.alignViewerToPlayer = AlignViewerToPlayer;
         }
 
         public void Shutdown()
         {
+            ClientSimControlMethods.alignViewerToPlayer = playerRoot => false;
             m_CameraInitialized = false;
             m_OriginalNearClipPlane = 0;
             m_OriginalFarClipPlane = 0;
@@ -422,6 +425,17 @@ namespace Unity.EditorXR.Core
 
             if (customPreviewCamera != null && customPreviewCamera as MonoBehaviour != null)
                 UnityObjectUtils.Destroy(((MonoBehaviour)customPreviewCamera).gameObject);
+        }
+
+        static bool AlignViewerToPlayer(Transform playerRoot)
+        {
+            var cameraRig = CameraUtils.GetCameraRig();
+            if (!cameraRig || !playerRoot)
+                return false;
+
+            // ClientSim owns locomotion in this mode; retain the tracked headset's local pose.
+            cameraRig.position = playerRoot.position;
+            return true;
         }
 
         public void OnBehaviorAwake() { }

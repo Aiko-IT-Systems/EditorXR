@@ -1,9 +1,13 @@
+using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Unity.EditorXR.Core;
 using Unity.EditorXR.Data;
 using Unity.XRTools.ModuleLoader;
 using UnityEditor;
+using UnityEditor.Search;
 using UnityEngine;
 
 namespace Unity.EditorXR.Modules
@@ -11,15 +15,22 @@ namespace Unity.EditorXR.Modules
 #if UNITY_EDITOR
     sealed class ProjectFolderModule : MonoBehaviour, IDelayedInitializationModule, IInterfaceConnector
     {
-        readonly List<IFilterUI> m_FilterUIs = new List<IFilterUI>();
+        const float k_ResultProcessingBudget = 0.004f;
+        const string k_ProjectSearchQuery = "a:assets";
+        const string k_ProjectSearchProvider = "asset";
 
+        readonly List<IFilterUI> m_FilterUIs = new List<IFilterUI>();
         readonly List<IUsesProjectFolderData> m_ProjectFolderLists = new List<IUsesProjectFolderData>();
-        List<FolderData> m_FolderData;
         readonly HashSet<string> m_AssetTypes = new HashSet<string>();
-        float m_ProjectFolderLoadStartTime;
-        float m_ProjectFolderLoadYieldTime;
-        IModule m_ModuleImplementation;
-        Coroutine m_FolderDataLoad;
+        readonly Queue<string> m_PendingSearchIds = new Queue<string>();
+        readonly object m_SearchLock = new object();
+
+        List<FolderData> m_FolderData;
+        SearchContext m_SearchContext;
+        Coroutine m_ResultProcessor;
+        int m_SearchGeneration;
+        bool m_SearchCompleted;
+        bool m_RefreshScheduled;
 
         public int initializationOrder { get { return 0; } }
         public int shutdownOrder { get { return 0; } }
@@ -27,18 +38,15 @@ namespace Unity.EditorXR.Modules
 
         public void Initialize()
         {
-            EditorApplication.projectChanged += UpdateProjectFolders;
+            EditorApplication.projectChanged += ScheduleProjectFolderRefresh;
             UpdateProjectFolders();
         }
 
         public void Shutdown()
         {
-            EditorApplication.projectChanged -= UpdateProjectFolders;
-            if (m_FolderDataLoad != null)
-            {
-                StopCoroutine(m_FolderDataLoad);
-                m_FolderDataLoad = null;
-            }
+            EditorApplication.projectChanged -= ScheduleProjectFolderRefresh;
+            EditorApplication.delayCall -= UpdateProjectFolders;
+            CancelSearch();
         }
 
         public void AddConsumer(IUsesProjectFolderData consumer)
@@ -76,31 +84,202 @@ namespace Unity.EditorXR.Modules
             return m_FolderData;
         }
 
+        void ScheduleProjectFolderRefresh()
+        {
+            if (m_RefreshScheduled)
+                return;
+
+            m_RefreshScheduled = true;
+            EditorApplication.delayCall += UpdateProjectFolders;
+        }
+
         void UpdateProjectFolders()
         {
-            if (m_FolderDataLoad != null)
-                StopCoroutine(m_FolderDataLoad);
+            EditorApplication.delayCall -= UpdateProjectFolders;
+            m_RefreshScheduled = false;
+            CancelSearch();
 
             m_AssetTypes.Clear();
-            m_FolderDataLoad = StartCoroutine(FolderData.CreateRootFolderData(m_AssetTypes, SetupFolderData));
+            var generation = m_SearchGeneration;
+            m_SearchContext = SearchService.CreateContext(k_ProjectSearchProvider, k_ProjectSearchQuery,
+                SearchFlags.Default);
+
+            SearchService.Request(m_SearchContext,
+                (context, items) => QueueSearchItems(generation, items),
+                context => CompleteSearch(generation), SearchFlags.Default);
+            m_ResultProcessor = StartCoroutine(ProcessSearchResults(generation));
+        }
+
+        void QueueSearchItems(int generation, IEnumerable<SearchItem> items)
+        {
+            if (generation != m_SearchGeneration)
+                return;
+
+            lock (m_SearchLock)
+            {
+                foreach (var item in items)
+                {
+                    if (item != null && !string.IsNullOrEmpty(item.id))
+                        m_PendingSearchIds.Enqueue(item.id);
+                }
+            }
+        }
+
+        void CompleteSearch(int generation)
+        {
+            if (generation != m_SearchGeneration)
+                return;
+
+            lock (m_SearchLock)
+            {
+                m_SearchCompleted = true;
+            }
+        }
+
+        IEnumerator ProcessSearchResults(int generation)
+        {
+            var rootGuid = AssetDatabase.AssetPathToGUID("Assets");
+            var root = new FolderData("Assets", GetStableIndex(rootGuid, "Assets"), 0, "Assets");
+            var folders = new Dictionary<string, FolderData>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "Assets", root }
+            };
+            var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            while (generation == m_SearchGeneration)
+            {
+                var frameStart = Time.realtimeSinceStartup;
+                string searchId;
+                while (TryDequeue(out searchId))
+                {
+                    AddSearchResult(searchId, root, folders, seenPaths);
+                    if (Time.realtimeSinceStartup - frameStart >= k_ResultProcessingBudget)
+                        break;
+                }
+
+                if (IsSearchDrained())
+                    break;
+
+                yield return null;
+            }
+
+            if (generation != m_SearchGeneration)
+                yield break;
+
+            root.SortRecursively();
+            SetupFolderData(root);
+            DisposeSearchContext();
+            m_ResultProcessor = null;
+        }
+
+        bool TryDequeue(out string searchId)
+        {
+            lock (m_SearchLock)
+            {
+                if (m_PendingSearchIds.Count > 0)
+                {
+                    searchId = m_PendingSearchIds.Dequeue();
+                    return true;
+                }
+            }
+
+            searchId = null;
+            return false;
+        }
+
+        bool IsSearchDrained()
+        {
+            lock (m_SearchLock)
+            {
+                return m_SearchCompleted && m_PendingSearchIds.Count == 0;
+            }
+        }
+
+        void AddSearchResult(string searchId, FolderData root, IDictionary<string, FolderData> folders,
+            ISet<string> seenPaths)
+        {
+            string path;
+            if (!ProjectSearchUtility.TryResolveAssetPath(searchId, out path)
+                || !path.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase)
+                || !seenPaths.Add(path))
+                return;
+
+            if (AssetDatabase.IsValidFolder(path))
+            {
+                GetOrCreateFolder(path, root, folders);
+                return;
+            }
+
+            var directory = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(directory))
+                return;
+
+            directory = directory.Replace('\\', '/');
+            var folder = GetOrCreateFolder(directory, root, folders);
+            var guid = AssetDatabase.AssetPathToGUID(path);
+            var typeName = ProjectSearchUtility.GetAssetTypeName(path);
+            folder.AddAsset(new AssetData(Path.GetFileNameWithoutExtension(path), guid, typeName));
+            m_AssetTypes.Add(typeName);
+        }
+
+        static FolderData GetOrCreateFolder(string path, FolderData root,
+            IDictionary<string, FolderData> folders)
+        {
+            FolderData folder;
+            if (folders.TryGetValue(path, out folder))
+                return folder;
+
+            var parentPath = Path.GetDirectoryName(path);
+            parentPath = string.IsNullOrEmpty(parentPath) ? "Assets" : parentPath.Replace('\\', '/');
+            var parent = string.Equals(path, "Assets", StringComparison.OrdinalIgnoreCase)
+                ? root
+                : GetOrCreateFolder(parentPath, root, folders);
+            var guid = AssetDatabase.AssetPathToGUID(path);
+            folder = parent.AddFolder(Path.GetFileName(path), path, GetStableIndex(guid, path));
+            folders[path] = folder;
+            return folder;
+        }
+
+        static int GetStableIndex(string guid, string fallback)
+        {
+            return string.IsNullOrEmpty(guid) ? fallback.GetHashCode() : guid.GetHashCode();
         }
 
         void SetupFolderData(FolderData folderData)
         {
-            m_FolderDataLoad = null;
             m_FolderData = new List<FolderData> { folderData };
 
-            // Send new data to existing folderLists
             foreach (var list in m_ProjectFolderLists)
-            {
                 list.folderData = GetFolderData();
+
+            foreach (var filterUI in m_FilterUIs)
+                filterUI.filterList = GetFilterList();
+        }
+
+        void CancelSearch()
+        {
+            m_SearchGeneration++;
+            if (m_ResultProcessor != null)
+            {
+                StopCoroutine(m_ResultProcessor);
+                m_ResultProcessor = null;
             }
 
-            // Send new data to existing filterUIs
-            foreach (var filterUI in m_FilterUIs)
+            DisposeSearchContext();
+            lock (m_SearchLock)
             {
-                filterUI.filterList = GetFilterList();
+                m_PendingSearchIds.Clear();
+                m_SearchCompleted = false;
             }
+        }
+
+        void DisposeSearchContext()
+        {
+            if (m_SearchContext == null)
+                return;
+
+            m_SearchContext.Dispose();
+            m_SearchContext = null;
         }
 
         public void LoadModule() { }
@@ -110,26 +289,72 @@ namespace Unity.EditorXR.Modules
         public void ConnectInterface(object target, object userData = null)
         {
             var usesProjectFolderData = target as IUsesProjectFolderData;
-            if (usesProjectFolderData != null)
-            {
-                AddConsumer(usesProjectFolderData);
+            if (usesProjectFolderData == null)
+                return;
 
-                var filterUI = target as IFilterUI;
-                if (filterUI != null)
-                    AddConsumer(filterUI);
-            }
+            AddConsumer(usesProjectFolderData);
+            var filterUI = target as IFilterUI;
+            if (filterUI != null)
+                AddConsumer(filterUI);
         }
 
         public void DisconnectInterface(object target, object userData = null)
         {
             var usesProjectFolderData = target as IUsesProjectFolderData;
-            if (usesProjectFolderData != null)
-            {
-                RemoveConsumer(usesProjectFolderData);
+            if (usesProjectFolderData == null)
+                return;
 
-                var filterUI = target as IFilterUI;
-                if (filterUI != null)
-                    RemoveConsumer(filterUI);
+            RemoveConsumer(usesProjectFolderData);
+            var filterUI = target as IFilterUI;
+            if (filterUI != null)
+                RemoveConsumer(filterUI);
+        }
+    }
+
+    static class ProjectSearchUtility
+    {
+        internal static bool TryResolveAssetPath(string searchId, out string path)
+        {
+            GlobalObjectId globalObjectId;
+            if (GlobalObjectId.TryParse(searchId, out globalObjectId))
+            {
+                path = AssetDatabase.GUIDToAssetPath(globalObjectId.assetGUID.ToString());
+                return !string.IsNullOrEmpty(path);
+            }
+
+            path = null;
+            return false;
+        }
+
+        internal static string GetAssetTypeName(string path)
+        {
+            switch (Path.GetExtension(path).ToLowerInvariant())
+            {
+                case ".prefab":
+                    return AssetData.PrefabTypeString;
+                case ".fbx":
+                case ".obj":
+                case ".dae":
+                case ".3ds":
+                    return AssetData.ModelTypeString;
+                case ".asset":
+                    return "Asset";
+            }
+
+            var type = AssetDatabase.GetMainAssetTypeAtPath(path);
+            if (type == null)
+                return string.Empty;
+
+            switch (type.Name)
+            {
+                case "MonoScript":
+                    return "Script";
+                case "SceneAsset":
+                    return "Scene";
+                case "AudioMixerController":
+                    return "AudioMixer";
+                default:
+                    return type.Name;
             }
         }
     }
@@ -138,4 +363,4 @@ namespace Unity.EditorXR.Modules
     {
     }
 #endif
-    }
+}
